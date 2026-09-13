@@ -1,0 +1,6 @@
+{
+  "name": "DevSeed 課業進化站",
+  "description": "多學科互動式測驗學習系統，支援劍橋 L4-PET 英文考期專屬週考、題庫自動同步、客製作答限時與 AI 命題格式匯入",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
