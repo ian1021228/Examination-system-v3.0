@@ -24,14 +24,20 @@
    - **結構**：
      - **Section A – 時態填空 (Verb Tense Conjugation Table，共 15 分)**：
        - 從當週進度範圍挑選 5 組動詞。
-       - 依據《OD單字表 L4》之 100 不規則動詞表，考動詞純三態變化：Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)，無主詞代名詞，共 5 組 x 3 態 = 15 格（每格 1 分，共 15 分）。
+       - 純考動詞三態變化（不綁定代名詞）：Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)，共 5 組 x 3 態 = 15 格（每格 1 分，共 15 分）。
      - **Section B – 時態獨立單句填空 (Verb Tense Sentence Completion，共 5 分)**：
        - **完全無短文篇章**：沒有任何 `clozePassage`，不考整篇閱讀克漏字。
        - **5 題完全獨立的語境單句**：每回僅有 5 道互相獨立的日常生活造句（1~5 題，每題 1 分，共 5 分）。
        - **無動詞原形提示**：句末不附括號提示（如無 `(blow)`、`(awake)` 等），要求學生自主從 Part II Sec A 的 5 個動詞中選詞，並依句型與時間副詞變換為正確時態。
        - 核心考點為動詞語境選擇與時態判斷變化（現在式、過去式、現在完成式等）。共 5 題（每題 1 分，共 5 分）。
 
-3. **系統自動歸類核心規範：每一題必須明確標註所屬日期 (`examDate`)**：
+
+3. **大小寫與拼寫評分標準（大小寫皆可，只要拼音/拼字正確）**：
+   - 考題評分**完全不區分英文字母大小寫**（例如 `Ability`、`ability`、`ABILITY` 皆視為正確）。
+   - 自動相容全形/半形字元轉換（NFKC 標準化），自動過濾多餘前後綴空白與中英文標點符號。
+   - 只要單字拼寫字母（拼音）正確無誤，即可獲得全部分數。
+
+4. **系統自動歸類核心規範：每一題必須明確標註所屬日期 (`examDate`)**：
    - 本測驗系統支援「**匯入指定考期之 PET 專用考卷 JSON 後，自動將每道題目精準歸類為正確的日期**」。
    - 因此，產出的 JSON 中**每一道考題物件內，都必須明確帶有 `"examDate": "MMDD"`（如 `"examDate": "0916"`）**！
    - 涵蓋範圍：Part I Section A 30 題、Part I Section B 20 題、Part II Section A 5 組動詞、Part II Section B 5 題獨立動詞時態單句填空。
@@ -159,19 +165,19 @@ interface PetExamPaper {
   };
   
   part2_verbs: {
-    // 5 組動詞三態時態填空（15 格），動詞出自該週「動詞考試進度」
+    // 5 組動詞三態填空（15 格），純考三態變化（Base Form / Past Simple / Participle），禁止考主詞代名詞
     sectionA_tenses: Array<{
       id: number; // 1 ~ 5
       examDate: string; // 【必須明確標註所屬考期日期】，如 "0916"
-      verbChinese: string; // 中文意思，如 "打；跳動"
-      subject: string; // 指定主詞代名詞，如 "He", "They", "We", "I", "She"
-      presentSimple: string; // 現在式（依主詞變化，如 "beats" 或 "blow"）
-      pastSimple: string; // 過去式，如 "beat" 或 "blew"
-      participle: string; // 完成式/過去分詞，如 "has beaten" 或 "have blown"
+      verbChinese: string; // 中文意思或英文(中文)，如 "awake (醒來)"
+      subject?: string; // 設為 "-"（不考人稱代名詞）
+      presentSimple: string; // 原形動詞 (Base Form)，如 "awake"
+      pastSimple: string; // 過去式 (Past Simple)，如 "awoke"
+      participle: string; // 過去分詞 (Participle)，如 "awaken"
       acceptableAnswers?: {
         presentSimple?: string[];
         pastSimple?: string[];
-        participle?: string[]; // 包含純分詞 "beaten" 與 "has beaten"
+        participle?: string[];
       };
     }>;
     
@@ -260,71 +266,71 @@ interface PetExamPaper {
       {
         "id": 1,
         "examDate": "0909",
-        "verbChinese": "打；跳動",
-        "subject": "He",
-        "presentSimple": "beats",
-        "pastSimple": "beat",
-        "participle": "has beaten",
+        "verbChinese": "awake (醒來)",
+        "subject": "-",
+        "presentSimple": "awake",
+        "pastSimple": "awoke",
+        "participle": "awaken",
         "acceptableAnswers": {
-          "presentSimple": ["beats"],
-          "pastSimple": ["beat"],
-          "participle": ["has beaten", "beaten"]
+          "presentSimple": ["awake"],
+          "pastSimple": ["awoke"],
+          "participle": ["awaken", "awoken"]
         }
       },
       {
         "id": 2,
         "examDate": "0909",
-        "verbChinese": "吹；吹動",
-        "subject": "They",
-        "presentSimple": "blow",
-        "pastSimple": "blew",
-        "participle": "has blown",
+        "verbChinese": "beat (打；跳動)",
+        "subject": "-",
+        "presentSimple": "beat",
+        "pastSimple": "beat",
+        "participle": "beaten",
         "acceptableAnswers": {
-          "presentSimple": ["blow"],
-          "pastSimple": ["blew"],
-          "participle": ["has blown", "blown"]
+          "presentSimple": ["beat"],
+          "pastSimple": ["beat"],
+          "participle": ["beaten"]
         }
       },
       {
         "id": 3,
         "examDate": "0909",
-        "verbChinese": "咬",
-        "subject": "We",
-        "presentSimple": "bite",
-        "pastSimple": "bit",
-        "participle": "has bitten",
+        "verbChinese": "begin (開始)",
+        "subject": "-",
+        "presentSimple": "begin",
+        "pastSimple": "began",
+        "participle": "begun",
         "acceptableAnswers": {
-          "presentSimple": ["bite"],
-          "pastSimple": ["bit"],
-          "participle": ["has bitten", "bitten"]
+          "presentSimple": ["begin"],
+          "pastSimple": ["began"],
+          "participle": ["begun"]
         }
       },
       {
         "id": 4,
         "examDate": "0909",
-        "verbChinese": "醒來",
-        "subject": "I",
-        "presentSimple": "awake",
-        "pastSimple": "awoke",
-        "participle": "have awaken",
+        "verbChinese": "bite (咬)",
+        "subject": "-",
+        "presentSimple": "bite",
+        "pastSimple": "bit",
+        "participle": "bitten",
         "acceptableAnswers": {
-          "presentSimple": ["awake"],
-          "pastSimple": ["awoke"],
-          "participle": ["have awaken", "awaken", "awoken"]
+          "presentSimple": ["bite"],
+          "pastSimple": ["bit"],
+          "participle": ["bitten"]
         }
       },
       {
         "id": 5,
         "examDate": "0909",
-        "verbChinese": "開始",
-        "subject": "She",
-        "presentSimple": "begins",
-        "pastSimple": "began",
-        "participle": "has begun",
+        "verbChinese": "blow (吹；吹動)",
+        "subject": "-",
+        "presentSimple": "blow",
+        "pastSimple": "blew",
+        "participle": "blown",
         "acceptableAnswers": {
-          "presentSimple": ["begins"],
-          "pastSimple": ["began"],
-          "participle": ["has begun", "begun"]
+          "presentSimple": ["blow"],
+          "pastSimple": ["blew"],
+          "participle": ["blown"]
         }
       }
     ],

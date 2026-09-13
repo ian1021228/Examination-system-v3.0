@@ -321,9 +321,10 @@ export function PetExamRunner({ user }: { user: any }) {
             if (!p2aMap[rowId]) {
               const zhMatch = q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/);
               const subMatch = q.prompt.match(/主詞:\s*([^[]+)/);
+              const fallbackZh = q.clue ? (q.clue.match(/動詞[：:]\s*([^，,\s]+)/)?.[1] || q.clue) : '';
               p2aMap[rowId] = {
                 id: rowId,
-                verbChinese: zhMatch ? zhMatch[1] : (q.clue ? q.clue.replace(/動詞：([^，]+).*/, '$1') : '動詞'),
+                verbChinese: zhMatch ? zhMatch[1] : (fallbackZh || '動詞'),
                 subject: subMatch ? subMatch[1].trim() : '-',
                 presentSimple: '',
                 pastSimple: '',
@@ -429,7 +430,7 @@ export function PetExamRunner({ user }: { user: any }) {
     if (answeredCount < 70) {
       const confirmed = await confirmModal({
         title: '確認交卷',
-        message: `您目前尚有 ${70 - answeredCount} 題未作答，確定要現在交卷結算嗎？`,
+        message: `您目前尚有 ${70 - answeredCount} 題未作答，確定要現在交卷結算嗎？\n(未作答題目將計為 0 分)`,
         confirmText: '確定交卷',
         cancelText: '繼續作答'
       });
@@ -544,6 +545,87 @@ export function PetExamRunner({ user }: { user: any }) {
     // 記錄作答至 Firestore attempts
     if (user?.uid) {
       try {
+        const wrongQuestionIds: string[] = [];
+        const answersList: any[] = [];
+
+        // Part I Sec A (30題)
+        reviewDetails.sec1A.forEach((item: any) => {
+          const qId = `pet_${paper.examDate}_1a_${item.id}`;
+          if (!item.isCorrect) wrongQuestionIds.push(qId);
+          answersList.push({
+            questionId: qId,
+            questionPrompt: `[Part I - Sec A 英譯] ${item.chinese}`,
+            userAnswer: item.userAns,
+            correctAnswer: item.correctAns,
+            isCorrect: item.isCorrect,
+            timeTaken: 0
+          });
+        });
+
+        // Part I Sec B (20題)
+        reviewDetails.sec1B.forEach((item: any) => {
+          const qId = `pet_${paper.examDate}_1b_${item.id}`;
+          if (!item.isCorrect) wrongQuestionIds.push(qId);
+          answersList.push({
+            questionId: qId,
+            questionPrompt: `[Part I - Sec B 語境] ${item.sentence}`,
+            userAnswer: item.userAns,
+            correctAnswer: item.correctAns,
+            isCorrect: item.isCorrect,
+            timeTaken: 0
+          });
+        });
+
+        // Part II Sec A (15格)
+        reviewDetails.sec2A.forEach((item: any) => {
+          const qIdPres = `pet_${paper.examDate}_2a_${item.id}_pres`;
+          if (!item.present.isCorrect) wrongQuestionIds.push(qIdPres);
+          answersList.push({
+            questionId: qIdPres,
+            questionPrompt: `[Part II - Sec A 原形] ${item.verbChinese}`,
+            userAnswer: item.present.user,
+            correctAnswer: item.present.correct,
+            isCorrect: item.present.isCorrect,
+            timeTaken: 0
+          });
+
+          const qIdPast = `pet_${paper.examDate}_2a_${item.id}_past`;
+          if (!item.past.isCorrect) wrongQuestionIds.push(qIdPast);
+          answersList.push({
+            questionId: qIdPast,
+            questionPrompt: `[Part II - Sec A 過去式] ${item.verbChinese}`,
+            userAnswer: item.past.user,
+            correctAnswer: item.past.correct,
+            isCorrect: item.past.isCorrect,
+            timeTaken: 0
+          });
+
+          const qIdPart = `pet_${paper.examDate}_2a_${item.id}_part`;
+          if (!item.participle.isCorrect) wrongQuestionIds.push(qIdPart);
+          answersList.push({
+            questionId: qIdPart,
+            questionPrompt: `[Part II - Sec A 過去分詞] ${item.verbChinese}`,
+            userAnswer: item.participle.user,
+            correctAnswer: item.participle.correct,
+            isCorrect: item.participle.isCorrect,
+            timeTaken: 0
+          });
+        });
+
+        // Part II Sec B (5題)
+        reviewDetails.sec2B.forEach((item: any) => {
+          const qId = `pet_${paper.examDate}_2b_${item.id}`;
+          if (!item.isCorrect) wrongQuestionIds.push(qId);
+          answersList.push({
+            questionId: qId,
+            questionPrompt: `[Part II - Sec B 時態填空] ${item.sentence}`,
+            userAnswer: item.userAns,
+            correctAnswer: item.correctAns,
+            isCorrect: item.isCorrect,
+            timeTaken: 0
+          });
+        });
+
         await addDoc(collection(db, 'attempts'), {
           subject: 'pet',
           examDate: paper.examDate,
@@ -552,7 +634,12 @@ export function PetExamRunner({ user }: { user: any }) {
           score: total,
           maxScore: 70,
           accuracy,
-          timeTaken: (paper.timeLimitMinutes || 45) * 60 - timeLeftSeconds,
+          correctCount: total,
+          totalAnswered: 70,
+          cheatCount: 0,
+          timeTaken: Math.max(0, (paper.timeLimitMinutes || 45) * 60 - timeLeftSeconds) * 1000,
+          wrongQuestionIds,
+          answers: answersList,
           timestamp: Date.now(),
           breakdown: resultObj.breakdown
         });
@@ -727,7 +814,7 @@ export function PetExamRunner({ user }: { user: any }) {
           {/* Part II Sec A 檢視 */}
           <div>
             <h4 className="font-bold text-[#4A3F35] mb-3 text-sm bg-[#F5F5F0] p-2 rounded-lg">
-              Part II – Sec A: 動詞三態與人稱表格 (5 組動詞)
+              Part II – Sec A: 動詞三態表格 (5 組動詞)
             </h4>
             <div className="space-y-3 text-xs">
               {examResult.reviewDetails.sec2A.map((item: any) => (
@@ -735,15 +822,15 @@ export function PetExamRunner({ user }: { user: any }) {
                   <p className="font-bold text-[#4A3F35] mb-2">{item.id}. {item.verbChinese}{item.subject && item.subject !== '-' ? ` (主詞: ${item.subject})` : ''}</p>
                   <div className="grid grid-cols-3 gap-2">
                     <div className={`p-2 rounded ${item.present.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <p className="text-[#8C7A6B]">Present Simple</p>
+                      <p className="text-[#8C7A6B]">Base Form (原形)</p>
                       <p className="font-bold">{item.present.user || '(空)'} {item.present.isCorrect ? '✓' : `✗ (${item.present.correct})`}</p>
                     </div>
                     <div className={`p-2 rounded ${item.past.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <p className="text-[#8C7A6B]">Past Simple</p>
+                      <p className="text-[#8C7A6B]">Past Simple (過去式)</p>
                       <p className="font-bold">{item.past.user || '(空)'} {item.past.isCorrect ? '✓' : `✗ (${item.past.correct})`}</p>
                     </div>
                     <div className={`p-2 rounded ${item.participle.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
-                      <p className="text-[#8C7A6B]">Participle</p>
+                      <p className="text-[#8C7A6B]">Participle (過去分詞)</p>
                       <p className="font-bold">{item.participle.user || '(空)'} {item.participle.isCorrect ? '✓' : `✗ (${item.participle.correct})`}</p>
                     </div>
                   </div>
@@ -826,6 +913,14 @@ export function PetExamRunner({ user }: { user: any }) {
         </div>
       </div>
 
+      {/* 評分提示提示條 */}
+      <div className="bg-[#EAE2D3]/40 border border-[#EAE6DF] rounded-2xl px-4 py-2.5 flex items-center justify-between text-xs text-[#6A5F55]">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="bg-[#4A3F35] text-white text-[10px] px-2 py-0.5 rounded font-bold shrink-0">評分提示</span>
+          <span>英文<strong>大小寫皆可</strong>（如 <code className="bg-white px-1.5 py-0.5 rounded text-[#4A3F35] font-mono border border-[#EAE6DF]">Ability</code>、<code className="bg-white px-1.5 py-0.5 rounded text-[#4A3F35] font-mono border border-[#EAE6DF]">ability</code>、<code className="bg-white px-1.5 py-0.5 rounded text-[#4A3F35] font-mono border border-[#EAE6DF]">ABILITY</code>），只要拼音/拼字正確即算得分。</span>
+        </div>
+      </div>
+
       {/* 四大 Part 切換選單 (平板優化：觸控大按鈕、清晰狀態標記) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
@@ -890,7 +985,7 @@ export function PetExamRunner({ user }: { user: any }) {
                 Translate the words into English. (將中文詞彙翻譯成英文，共 30 題)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                請在下方輸入欄位中填入相對應的正確英文單字（大小寫皆可接受）。
+                請在下方輸入欄位中填入相對應的正確英文單字（大小寫皆可，只要拼音/拼字正確）。
               </p>
             </div>
 
@@ -907,7 +1002,10 @@ export function PetExamRunner({ user }: { user: any }) {
                     type="text"
                     value={answers1A[item.id] || ''}
                     onChange={e => setAnswers1A({ ...answers1A, [item.id]: e.target.value })}
-                    placeholder="輸入英文單字..."
+                    placeholder="輸入英文單字 (大小寫皆可)..."
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                   />
                 </div>
@@ -936,7 +1034,7 @@ export function PetExamRunner({ user }: { user: any }) {
                 Choose the correct words and write them in the appropriate sentences. (語境填空，共 20 題)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                請根據句意與前後文語境填入適當單字（單字源自 Section A 單字範圍，可依文法進行必要詞形變化）。
+                請根據句意與前後文語境填入適當單字（單字源自 Section A 單字範圍，大小寫皆可，只要拼音/拼字正確）。
               </p>
             </div>
 
@@ -955,7 +1053,10 @@ export function PetExamRunner({ user }: { user: any }) {
                       type="text"
                       value={answers1B[item.id] || ''}
                       onChange={e => setAnswers1B({ ...answers1B, [item.id]: e.target.value })}
-                      placeholder="填入適當單字..."
+                      placeholder="填入適當單字 (大小寫皆可)..."
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className="w-full max-w-md bg-white border border-[#D5CFC4] rounded-xl px-3.5 py-2 text-base sm:text-sm text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                     />
                   </div>
@@ -988,10 +1089,10 @@ export function PetExamRunner({ user }: { user: any }) {
                 Part II – Verbs · Section A
               </span>
               <h4 className="text-lg font-bold text-[#4A3F35] mt-2">
-                Fill in the correct verb forms. (不規則動詞三態填空，共 5 組動詞，15 格)
+                Fill in the correct verb tense. (動詞三態填空，共 5 組動詞，15 格)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                依據動詞與中文意思，於表格中填入 Base Form (原形/現在式)、Past Simple (過去式)、Participle (過去分詞)。
+                依據動詞中文意思，於表格中填入 Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)（大小寫皆可，只要拼音/拼字正確）。
               </p>
             </div>
 
@@ -1000,7 +1101,7 @@ export function PetExamRunner({ user }: { user: any }) {
               className="overflow-x-auto -mx-2 sm:mx-0 rounded-2xl border border-[#EAE6DF]"
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-              <table className="w-full text-left border-collapse min-w-[620px] text-xs sm:text-sm">
+              <table className="w-full text-left border-collapse min-w-[580px] text-xs sm:text-sm">
                 <thead>
                   <tr className="bg-[#EAE2D3]/60 text-[#4A3F35]">
                     <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Verb (動詞)</th>
@@ -1021,6 +1122,9 @@ export function PetExamRunner({ user }: { user: any }) {
                           value={answers2A[`${row.id}_present`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_present`]: e.target.value })}
                           placeholder="原形 (Base Form)..."
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
@@ -1030,6 +1134,9 @@ export function PetExamRunner({ user }: { user: any }) {
                           value={answers2A[`${row.id}_past`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_past`]: e.target.value })}
                           placeholder="過去式 (Past Simple)..."
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
@@ -1039,6 +1146,9 @@ export function PetExamRunner({ user }: { user: any }) {
                           value={answers2A[`${row.id}_participle`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_participle`]: e.target.value })}
                           placeholder="過去分詞 (Participle)..."
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
@@ -1076,7 +1186,7 @@ export function PetExamRunner({ user }: { user: any }) {
                 Verb Tense Sentence Completion (時態獨立單句填空，共 5 題)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                請閱讀下方 5 題獨立生活語境單句（無動詞括號提示），<strong>自主從上方 Section A 的 5 個動詞中選詞</strong>，並依句意結構與時間線索填入<strong>正確的時態變化形</strong>（每題 1 分，共 5 分）。
+                請閱讀下方 5 題獨立生活語境單句（無動詞括號提示），<strong>自主從上方 Section A 的 5 個動詞中選詞</strong>，並依句意結構與時間線索填入<strong>正確的時態變化形</strong>（每題 1 分，共 5 分；大小寫皆可，只要拼音/拼字正確）。
               </p>
             </div>
 
@@ -1095,7 +1205,10 @@ export function PetExamRunner({ user }: { user: any }) {
                       type="text"
                       value={answers2B[item.id] || ''}
                       onChange={e => setAnswers2B({ ...answers2B, [item.id]: e.target.value })}
-                      placeholder="請從 Sec A 動詞選詞並填入正確時態..."
+                      placeholder="請從 Sec A 動詞選詞並填入正確時態 (大小寫皆可)..."
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className="w-full max-w-md bg-white border border-[#D5CFC4] rounded-xl px-3.5 py-2 text-base sm:text-sm text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                     />
                   </div>

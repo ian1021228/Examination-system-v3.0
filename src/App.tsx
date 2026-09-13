@@ -14,6 +14,7 @@ import html2pdf from 'html2pdf.js';
 import { ParticleEngine } from './ParticleEngine';
 import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile, Leaderboard, XPShop, StudyTimer, LearningAnalyticsDashboard } from './features';
 import { PetExamDateSelector, PetExamRunner, PetAdminPanel } from './PetExamView';
+import { isAnswerCorrect } from './petExam';
 
 
 
@@ -101,7 +102,7 @@ export interface Attempt {
   totalAnswered?: number;
   timeTaken: number;
   cheatCount?: number;
-  wrongQuestionIds: string[];
+  wrongQuestionIds?: string[];
   answers?: AttemptAnswer[];
   timestamp: number;
 }
@@ -1457,11 +1458,15 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
   };
 
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>('all');
-  const filteredAttempts = selectedTask === 'all' ? attempts : attempts.filter(a => a.taskId === selectedTask);
+  const filteredAttempts = selectedTask === 'all' 
+    ? attempts 
+    : selectedTask === 'pet' 
+      ? attempts.filter(a => a.subject === 'pet') 
+      : attempts.filter(a => a.taskId === selectedTask);
   const userFilteredAttempts = selectedUserFilter === 'all' ? filteredAttempts : filteredAttempts.filter(a => a.userId === selectedUserFilter);
   const searchedAttempts = userFilteredAttempts.filter(a => 
-    a.userDisplayName?.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => b.timestamp - a.timestamp);
+    (a.userDisplayName || '').toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   
   const uniqueUsers = Array.from(new Set(filteredAttempts.map(a => a.userId))).map(id => {
     return { id, name: filteredAttempts.find(a => a.userId === id)?.userDisplayName || '未知' };
@@ -1469,8 +1474,9 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
 
   // Group by student
   const studentStats = userFilteredAttempts.reduce((acc, att) => {
-    if (!acc[att.userId]) {
-      acc[att.userId] = { 
+    const uid = att.userId || 'unknown';
+    if (!acc[uid]) {
+      acc[uid] = { 
         name: att.userDisplayName || '匿名', 
         attemptsCount: 0, 
         bestScore: 0,
@@ -1479,22 +1485,24 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
         totalAccuracy: 0
       };
     }
-    acc[att.userId].attemptsCount += 1;
-    acc[att.userId].bestScore = Math.max(acc[att.userId].bestScore, att.score);
-    acc[att.userId].totalScore += att.score;
-    acc[att.userId].totalAccuracy += att.accuracy;
-    acc[att.userId].averageAccuracy = Math.round(acc[att.userId].totalAccuracy / acc[att.userId].attemptsCount);
+    const s = att.score || 0;
+    const accRate = att.accuracy || 0;
+    acc[uid].attemptsCount += 1;
+    acc[uid].bestScore = Math.max(acc[uid].bestScore, s);
+    acc[uid].totalScore += s;
+    acc[uid].totalAccuracy += accRate;
+    acc[uid].averageAccuracy = Math.round(acc[uid].totalAccuracy / acc[uid].attemptsCount);
     return acc;
   }, {} as Record<string, any>);
 
   const studentList = Object.values(studentStats).sort((a, b) => b.bestScore - a.bestScore);
   const activePlayers = Object.keys(studentStats).length;
-  const avgScore = userFilteredAttempts.length > 0 ? Math.round(userFilteredAttempts.reduce((s, a) => s + a.score, 0) / userFilteredAttempts.length) : 0;
-  const highScore = userFilteredAttempts.length > 0 ? Math.max(...userFilteredAttempts.map(a => a.score)) : 0;
+  const avgScore = userFilteredAttempts.length > 0 ? Math.round(userFilteredAttempts.reduce((s, a) => s + (a.score || 0), 0) / userFilteredAttempts.length) : 0;
+  const highScore = userFilteredAttempts.length > 0 ? Math.max(0, ...userFilteredAttempts.map(a => a.score || 0)) : 0;
 
   // Find all difficult questions
   const wrongCountMap = userFilteredAttempts.reduce((acc, att) => {
-    att.wrongQuestionIds.forEach(id => {
+    (att.wrongQuestionIds || []).forEach(id => {
       acc[id] = (acc[id] || 0) + 1;
     });
     return acc;
@@ -1561,6 +1569,7 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
               className="bg-[#FDFBF7] border border-[#D5CFC4] rounded-lg px-4 py-2 text-[#4A3F35] min-w-[200px]"
             >
               <option value="all">全部任務</option>
+              <option value="pet">PET 週考測驗</option>
               {tasks.map(t => (
                 <option key={t.id} value={t.id}>{t.title}</option>
               ))}
@@ -1679,7 +1688,11 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
                        <input type="checkbox" checked={selectedAttempts.includes(a.id)} onChange={() => toggleSelectAttempt(a.id)} className="w-4 h-4 rounded border-[#D5CFC4]" />
                     </td>
                     <td className="p-4 text-[#6A5F55]">{new Date(a.timestamp).toLocaleString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                    <td className="p-4 text-[#4A3F35] flex items-center">{a.userDisplayName} {a.answers && <span className="ml-2 text-[10px] bg-[#EAE2D3] text-[#B39969] px-2 py-0.5 rounded">可展開</span>}</td>
+                    <td className="p-4 text-[#4A3F35] flex items-center flex-wrap gap-1">
+                      <span>{a.userDisplayName}</span>
+                      {a.subject === 'pet' && <span className="text-[10px] bg-[#72816B]/15 text-[#72816B] font-bold px-1.5 py-0.5 rounded">PET {a.examDate ? `${a.examDate}` : ''}</span>}
+                      {a.answers && <span className="text-[10px] bg-[#EAE2D3] text-[#B39969] px-2 py-0.5 rounded">可展開</span>}
+                    </td>
                     <td className="p-4 text-[#D4A373] font-bold">{a.score}</td>
                     <td className="p-4 text-[#7A8A99]">{a.correctCount !== undefined ? `${a.correctCount} / ${a.totalAnswered}` : (a.answers ? `${a.answers.filter(ans=>ans.isCorrect).length} / ${a.answers.length}` : `${Math.round(a.accuracy * (a.totalAnswered||a.score/100) / 100)} / ${a.totalAnswered || a.score/100}`)}</td>
                     <td className="p-4 text-[#72816B]">{a.accuracy}%</td>
@@ -1688,7 +1701,7 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
                   </tr>
                   {expandedAttemptId === a.id && a.answers && (
                     <tr className="bg-[#F5F5F0]/40 border-b border-[#D5CFC4]/50">
-                      <td colSpan={7} className="p-4 whitespace-normal">
+                      <td colSpan={8} className="p-4 whitespace-normal">
                         <div className="space-y-3 p-2">
                           <h4 className="text-sm font-bold text-[#6A5F55] flex items-center">
                             <List size={16} className="mr-2" /> 答題詳情明細
@@ -1716,7 +1729,7 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
                 </React.Fragment>
               ))}
               {searchedAttempts.length === 0 && (
-                <tr><td colSpan={7} className="p-4 text-center text-[#A69B8F]">沒有找到相符的紀錄</td></tr>
+                <tr><td colSpan={8} className="p-4 text-center text-[#A69B8F]">沒有找到相符的紀錄</td></tr>
               )}
             </tbody>
           </table>
@@ -1735,7 +1748,7 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
 
   const wrongQuestionIds = useMemo(() => {
     const ids = new Set<string>();
-    attempts.forEach(a => a.wrongQuestionIds.forEach(id => ids.add(id)));
+    attempts.forEach(a => (a.wrongQuestionIds || []).forEach(id => ids.add(id)));
     return ids;
   }, [attempts]);
 
@@ -2947,9 +2960,9 @@ export function Gameplay({ user }: { user: UserProfile }) {
         if (isChinese && sq.type === 'fill_in_the_blank') {
           const ansPinyin = pinyin(sqAns.trim(), { toneType: 'none', v: true }).replace(/\s+/g, '').toLowerCase();
           const correctPinyin = pinyin((sq.correctAnswer || '').trim(), { toneType: 'none', v: true }).replace(/\s+/g, '').toLowerCase();
-          sqCorrect = (ansPinyin === correctPinyin) && sqAns.trim().length > 0;
+          sqCorrect = ((ansPinyin === correctPinyin) && sqAns.trim().length > 0) || isAnswerCorrect(sqAns, sq.correctAnswer);
         } else {
-          sqCorrect = sqAns.toLowerCase().trim() === (sq.correctAnswer || '').toLowerCase().trim();
+          sqCorrect = isAnswerCorrect(sqAns, sq.correctAnswer);
         }
         if (!sqCorrect) { isCorrect = false; break; }
       }
@@ -2958,9 +2971,9 @@ export function Gameplay({ user }: { user: UserProfile }) {
       if (isChinese && currentQ.type === 'fill_in_the_blank') {
           const ansPinyin = pinyin(answer.trim(), { toneType: 'none', v: true }).replace(/\s+/g, '').toLowerCase();
           const correctPinyin = pinyin((currentQ.correctAnswer || '').trim(), { toneType: 'none', v: true }).replace(/\s+/g, '').toLowerCase();
-          isCorrect = (ansPinyin === correctPinyin) && answer.trim().length > 0;
+          isCorrect = ((ansPinyin === correctPinyin) && answer.trim().length > 0) || isAnswerCorrect(answer, currentQ.correctAnswer, currentQ.acceptableAnswers);
       } else {
-          isCorrect = answer.toLowerCase().trim() === (currentQ.correctAnswer || '').toLowerCase().trim();
+          isCorrect = isAnswerCorrect(answer, currentQ.correctAnswer, currentQ.acceptableAnswers);
       }
     }
     

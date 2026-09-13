@@ -87,32 +87,62 @@ export interface PetExamPaper {
   };
 }
 
-// 答案比對正規化工具
+// 答案比對正規化工具（大小寫皆可、全半形相容、標點容錯）
 export function normalizeAnswerText(text: string): string {
   if (!text) return '';
   return text
+    .normalize('NFKC')
     .trim()
     .toLowerCase()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()?'"]/g, '')
+    .replace(/[’‘`]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[.,/#!$%^&*;:{}=\-_~()?'"、，。？！；：]/g, '')
     .replace(/\s+/g, ' ');
 }
 
 export function isAnswerCorrect(userInput: string, correctAnswer: string, acceptable: string[] = []): boolean {
+  if (!userInput) return false;
   const normUser = normalizeAnswerText(userInput);
   if (!normUser) return false;
 
-  const validTargets = [correctAnswer, ...acceptable].map(normalizeAnswerText).filter(Boolean);
+  const rawTargets = [correctAnswer, ...(acceptable || [])].filter(Boolean);
+  const expandedTargets = new Set<string>();
 
-  // 處理包含斜線情況，如 a/an
-  const expandedTargets: string[] = [];
-  for (const t of validTargets) {
-    expandedTargets.push(t);
-    if (t.includes('/')) {
-      t.split('/').forEach(part => expandedTargets.push(normalizeAnswerText(part)));
+  for (const raw of rawTargets) {
+    // 原文正規化
+    const norm = normalizeAnswerText(raw);
+    if (norm) expandedTargets.add(norm);
+
+    // 處理包含斜線情況，如 a/an 或 awake/awoken
+    if (raw.includes('/')) {
+      raw.split('/').forEach(part => {
+        const normPart = normalizeAnswerText(part);
+        if (normPart) expandedTargets.add(normPart);
+      });
+    }
+
+    // 處理括號中可選文字，例如 "awake (醒來)" -> "awake"，或是 "(to) walk" -> "walk"
+    if (raw.includes('(') && raw.includes(')')) {
+      const strippedParens = normalizeAnswerText(raw.replace(/\([^)]*\)/g, ''));
+      if (strippedParens) expandedTargets.add(strippedParens);
+      const parensContentOnly = normalizeAnswerText(raw.replace(/[()]/g, ''));
+      if (parensContentOnly) expandedTargets.add(parensContentOnly);
     }
   }
 
-  return expandedTargets.includes(normUser);
+  // 1. 完全比對（忽略大小寫、全半形、標點）
+  if (expandedTargets.has(normUser)) return true;
+
+  // 2. 助動詞容錯 (如 have/has/had/to 等前綴容錯)
+  const userNoAux = normUser.replace(/^(have|has|had|to)\s+/, '');
+  for (const target of expandedTargets) {
+    const targetNoAux = target.replace(/^(have|has|had|to)\s+/, '');
+    if (userNoAux && targetNoAux && userNoAux === targetNoAux) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // 09/09 官方真題黃金樣卷（完全忠實還原 0909 L4 PET考試卷.pdf）
@@ -190,7 +220,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['awake', 'Awake'],
           pastSimple: ['awoke', 'Awoke'],
-          participle: ['awaken', 'Awaken', 'has awaken', 'have awaken', 'awoken', 'Awoken']
+          participle: ['awaken', 'awoken', 'Awaken', 'Awoken', 'have awaken', 'has awaken']
         }
       },
       {
@@ -306,7 +336,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
   // 3. Part II - Section A: 5 組動詞三態 (共 15 格)
   (paper.part2_verbs?.sectionA_tenses || []).forEach(item => {
     const itemDate = item.examDate || defaultDate;
-    // Present Simple (原形 / 現在式)
+    // Present Simple
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -320,13 +350,13 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Present Simple 原形/現在式]`,
       correctAnswer: item.presentSimple,
-      clue: `動詞：${item.verbChinese}，原形`,
-      explanation: `【動詞三態填空】${item.verbChinese} 之原形 (Base Form) 為「${item.presentSimple}」`,
-      acceptableAnswers: item.acceptableAnswers?.presentSimple || [item.presentSimple],
+      clue: `動詞：${item.verbChinese}，原形 (Base Form)`,
+      explanation: `【動詞三態時態填空】${item.verbChinese} 之原形 (Base Form) 為「${item.presentSimple}」`,
+      acceptableAnswers: item.acceptableAnswers?.presentSimple || [],
       createdAt: Date.now()
     });
 
-    // Past Simple (過去式)
+    // Past Simple
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -340,13 +370,13 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Past Simple 過去式]`,
       correctAnswer: item.pastSimple,
-      clue: `動詞：${item.verbChinese}，過去式`,
-      explanation: `【動詞三態填空】${item.verbChinese} 之過去式 (Past Simple) 為「${item.pastSimple}」`,
-      acceptableAnswers: item.acceptableAnswers?.pastSimple || [item.pastSimple],
+      clue: `動詞：${item.verbChinese}，過去式 (Past Simple)`,
+      explanation: `【動詞三態時態填空】${item.verbChinese} 之過去式 (Past Simple) 為「${item.pastSimple}」`,
+      acceptableAnswers: item.acceptableAnswers?.pastSimple || [],
       createdAt: Date.now()
     });
 
-    // Participle (過去分詞)
+    // Participle
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -360,9 +390,9 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Participle 過去分詞]`,
       correctAnswer: item.participle,
-      clue: `動詞：${item.verbChinese}，過去分詞`,
-      explanation: `【動詞三態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${item.participle}」`,
-      acceptableAnswers: item.acceptableAnswers?.participle || [item.participle],
+      clue: `動詞：${item.verbChinese}，過去分詞 (Participle)`,
+      explanation: `【動詞三態時態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${item.participle}」`,
+      acceptableAnswers: item.acceptableAnswers?.participle || [],
       createdAt: Date.now()
     });
   });
