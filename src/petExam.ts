@@ -213,25 +213,25 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
       {
         id: 1,
         verbChinese: 'awake (醒來)',
-        subject: '-',
+        subject: 'He',
         presentSimple: 'awake',
         pastSimple: 'awoke',
         participle: 'awaken',
         acceptableAnswers: {
-          presentSimple: ['awake', 'Awake'],
+          presentSimple: ['awake', 'Awake', 'awakes', 'Awakes'],
           pastSimple: ['awoke', 'Awoke'],
-          participle: ['awaken', 'awoken', 'Awaken', 'Awoken', 'have awaken', 'has awaken']
+          participle: ['awaken', 'awoken', 'Awaken', 'Awoken', 'have awaken', 'has awaken', 'has awoken', 'have awoken']
         }
       },
       {
         id: 2,
         verbChinese: 'beat (打；跳動)',
-        subject: '-',
+        subject: 'He',
         presentSimple: 'beat',
         pastSimple: 'beat',
         participle: 'beaten',
         acceptableAnswers: {
-          presentSimple: ['beat', 'Beat'],
+          presentSimple: ['beat', 'Beat', 'beats', 'Beats'],
           pastSimple: ['beat', 'Beat'],
           participle: ['beaten', 'Beaten', 'has beaten', 'have beaten']
         }
@@ -239,12 +239,12 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
       {
         id: 3,
         verbChinese: 'begin (開始)',
-        subject: '-',
+        subject: 'He',
         presentSimple: 'begin',
         pastSimple: 'began',
         participle: 'begun',
         acceptableAnswers: {
-          presentSimple: ['begin', 'Begin'],
+          presentSimple: ['begin', 'Begin', 'begins', 'Begins'],
           pastSimple: ['began', 'Began'],
           participle: ['begun', 'Begun', 'has begun', 'have begun']
         }
@@ -252,12 +252,12 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
       {
         id: 4,
         verbChinese: 'bite (咬)',
-        subject: '-',
+        subject: 'He',
         presentSimple: 'bite',
         pastSimple: 'bit',
         participle: 'bitten',
         acceptableAnswers: {
-          presentSimple: ['bite', 'Bite'],
+          presentSimple: ['bite', 'Bite', 'bites', 'Bites'],
           pastSimple: ['bit', 'Bit'],
           participle: ['bitten', 'Bitten', 'has bitten', 'have bitten']
         }
@@ -265,12 +265,12 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
       {
         id: 5,
         verbChinese: 'blow (吹；吹動)',
-        subject: '-',
+        subject: 'He',
         presentSimple: 'blow',
         pastSimple: 'blew',
         participle: 'blown',
         acceptableAnswers: {
-          presentSimple: ['blow', 'Blow'],
+          presentSimple: ['blow', 'Blow', 'blows', 'Blows'],
           pastSimple: ['blew', 'Blew'],
           participle: ['blown', 'Blown', 'has blown', 'have blown']
         }

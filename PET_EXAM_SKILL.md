@@ -24,7 +24,7 @@
    - **結構**：
      - **Section A – 時態填空 (Verb Tense Conjugation Table，共 15 分)**：
        - 從當週進度範圍挑選 5 組動詞。
-       - 純考動詞三態變化（不綁定代名詞）：Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)，共 5 組 x 3 態 = 15 格（每格 1 分，共 15 分）。
+       - 考動詞三態變化（介面明確強調主詞為 He）：Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)，共 5 組 x 3 態 = 15 格（每格 1 分，共 15 分）。系統相容第三人稱單數現在式（如 beats）與原形動詞給分。
      - **Section B – 時態獨立單句填空 (Verb Tense Sentence Completion，共 5 分)**：
        - **完全無短文篇章**：沒有任何 `clozePassage`，不考整篇閱讀克漏字。
        - **5 題完全獨立的語境單句**：每回僅有 5 道互相獨立的日常生活造句（1~5 題，每題 1 分，共 5 分）。

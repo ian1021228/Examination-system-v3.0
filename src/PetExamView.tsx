@@ -1094,6 +1094,12 @@ export function PetExamRunner({ user }: { user: any }) {
               <p className="text-xs text-[#8C7A6B] mt-1">
                 依據動詞中文意思，於表格中填入 Base Form (原形)、Past Simple (過去式)、Participle (過去分詞)（大小寫皆可，只要拼音/拼字正確）。
               </p>
+              <div className="mt-2.5 inline-flex items-center gap-2 bg-[#EAE2D3]/70 border border-[#D5CFC4] text-[#4A3F35] text-xs font-bold px-3 py-1.5 rounded-lg">
+                <span className="w-2 h-2 rounded-full bg-[#72816B]"></span>
+                <span>主詞設定 / Subject：</span>
+                <span className="bg-[#4A3F35] text-white px-2 py-0.5 rounded font-black tracking-wide text-xs">He</span>
+                <span className="text-[#8C7A6B] font-normal">（如需考慮人稱變化時，此處主詞一律為 He）</span>
+              </div>
             </div>
 
             {/* 動詞時態表格 (平板優化橫向滑動與觸控輸入) */}
@@ -1114,7 +1120,10 @@ export function PetExamRunner({ user }: { user: any }) {
                   {(paper.part2_verbs?.sectionA_tenses || []).map(row => (
                     <tr key={row.id} className="hover:bg-[#FDFBF7]">
                       <td className="p-3.5 font-bold text-[#4A3F35]">
-                        {row.verbChinese}
+                        <div>{row.verbChinese}</div>
+                        <div className="text-[11px] font-semibold text-[#72816B] mt-0.5">
+                          [主詞: {row.subject && row.subject !== '-' ? row.subject : 'He'}]
+                        </div>
                       </td>
                       <td className="p-2.5">
                         <input
