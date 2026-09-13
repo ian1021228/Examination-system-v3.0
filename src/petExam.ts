@@ -51,7 +51,7 @@ export interface PetVerbTenseItem {
   id: number;
   examDate?: string; // 題目所屬考期代碼，如 "0916"
   verbChinese: string;
-  subject: string;
+  subject?: string;
   presentSimple: string;
   pastSimple: string;
   participle: string;
@@ -182,67 +182,67 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
     sectionA_tenses: [
       {
         id: 1,
-        verbChinese: '打；跳動',
-        subject: 'He',
-        presentSimple: 'beats',
-        pastSimple: 'beat',
-        participle: 'has beaten',
+        verbChinese: 'awake (醒來)',
+        subject: '-',
+        presentSimple: 'awake',
+        pastSimple: 'awoke',
+        participle: 'awaken',
         acceptableAnswers: {
-          presentSimple: ['beats'],
-          pastSimple: ['beat'],
-          participle: ['has beaten', 'beaten']
+          presentSimple: ['awake', 'Awake'],
+          pastSimple: ['awoke', 'Awoke'],
+          participle: ['awaken', 'Awaken', 'has awaken', 'have awaken', 'awoken', 'Awoken']
         }
       },
       {
         id: 2,
-        verbChinese: '吹；吹動',
-        subject: 'They',
-        presentSimple: 'blow',
-        pastSimple: 'blew',
-        participle: 'has blown',
+        verbChinese: 'beat (打；跳動)',
+        subject: '-',
+        presentSimple: 'beat',
+        pastSimple: 'beat',
+        participle: 'beaten',
         acceptableAnswers: {
-          presentSimple: ['blow'],
-          pastSimple: ['blew'],
-          participle: ['has blown', 'have blown', 'blown']
+          presentSimple: ['beat', 'Beat'],
+          pastSimple: ['beat', 'Beat'],
+          participle: ['beaten', 'Beaten', 'has beaten', 'have beaten']
         }
       },
       {
         id: 3,
-        verbChinese: '咬',
-        subject: 'We',
-        presentSimple: 'bite',
-        pastSimple: 'bit',
-        participle: 'has bitten',
+        verbChinese: 'begin (開始)',
+        subject: '-',
+        presentSimple: 'begin',
+        pastSimple: 'began',
+        participle: 'begun',
         acceptableAnswers: {
-          presentSimple: ['bite'],
-          pastSimple: ['bit'],
-          participle: ['has bitten', 'have bitten', 'bitten']
+          presentSimple: ['begin', 'Begin'],
+          pastSimple: ['began', 'Began'],
+          participle: ['begun', 'Begun', 'has begun', 'have begun']
         }
       },
       {
         id: 4,
-        verbChinese: '醒來',
-        subject: 'I',
-        presentSimple: 'awake',
-        pastSimple: 'awoke',
-        participle: 'have awaken',
+        verbChinese: 'bite (咬)',
+        subject: '-',
+        presentSimple: 'bite',
+        pastSimple: 'bit',
+        participle: 'bitten',
         acceptableAnswers: {
-          presentSimple: ['awake'],
-          pastSimple: ['awoke'],
-          participle: ['have awaken', 'has awaken', 'awaken', 'awoken']
+          presentSimple: ['bite', 'Bite'],
+          pastSimple: ['bit', 'Bit'],
+          participle: ['bitten', 'Bitten', 'has bitten', 'have bitten']
         }
       },
       {
         id: 5,
-        verbChinese: '開始',
-        subject: 'She',
-        presentSimple: 'begins',
-        pastSimple: 'began',
-        participle: 'has begun',
+        verbChinese: 'blow (吹；吹動)',
+        subject: '-',
+        presentSimple: 'blow',
+        pastSimple: 'blew',
+        participle: 'blown',
         acceptableAnswers: {
-          presentSimple: ['begins'],
-          pastSimple: ['began'],
-          participle: ['has begun', 'begun']
+          presentSimple: ['blow', 'Blow'],
+          pastSimple: ['blew', 'Blew'],
+          participle: ['blown', 'Blown', 'has blown', 'have blown']
         }
       }
     ],
@@ -306,7 +306,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
   // 3. Part II - Section A: 5 組動詞三態 (共 15 格)
   (paper.part2_verbs?.sectionA_tenses || []).forEach(item => {
     const itemDate = item.examDate || defaultDate;
-    // Present Simple
+    // Present Simple (原形 / 現在式)
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -318,15 +318,15 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞三態 (${item.verbChinese}) - 主詞: ${item.subject} [Present Simple 現在式]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Present Simple 原形/現在式]`,
       correctAnswer: item.presentSimple,
-      clue: `動詞：${item.verbChinese}，主詞：${item.subject}，現在式`,
-      explanation: `【動詞三態時態填空】${item.verbChinese} 在主詞 ${item.subject} 之現在式為「${item.presentSimple}」`,
-      acceptableAnswers: item.acceptableAnswers?.presentSimple || [],
+      clue: `動詞：${item.verbChinese}，原形`,
+      explanation: `【動詞三態填空】${item.verbChinese} 之原形 (Base Form) 為「${item.presentSimple}」`,
+      acceptableAnswers: item.acceptableAnswers?.presentSimple || [item.presentSimple],
       createdAt: Date.now()
     });
 
-    // Past Simple
+    // Past Simple (過去式)
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -338,15 +338,15 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞三態 (${item.verbChinese}) - 主詞: ${item.subject} [Past Simple 過去式]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Past Simple 過去式]`,
       correctAnswer: item.pastSimple,
-      clue: `動詞：${item.verbChinese}，主詞：${item.subject}，過去式`,
-      explanation: `【動詞三態時態填空】${item.verbChinese} 在主詞 ${item.subject} 之過去式為「${item.pastSimple}」`,
-      acceptableAnswers: item.acceptableAnswers?.pastSimple || [],
+      clue: `動詞：${item.verbChinese}，過去式`,
+      explanation: `【動詞三態填空】${item.verbChinese} 之過去式 (Past Simple) 為「${item.pastSimple}」`,
+      acceptableAnswers: item.acceptableAnswers?.pastSimple || [item.pastSimple],
       createdAt: Date.now()
     });
 
-    // Participle
+    // Participle (過去分詞)
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -358,11 +358,11 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞三態 (${item.verbChinese}) - 主詞: ${item.subject} [Participle 完成式/過去分詞]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Participle 過去分詞]`,
       correctAnswer: item.participle,
-      clue: `動詞：${item.verbChinese}，主詞：${item.subject}，完成式分詞`,
-      explanation: `【動詞三態時態填空】${item.verbChinese} 在主詞 ${item.subject} 之分詞為「${item.participle}」`,
-      acceptableAnswers: item.acceptableAnswers?.participle || [],
+      clue: `動詞：${item.verbChinese}，過去分詞`,
+      explanation: `【動詞三態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${item.participle}」`,
+      acceptableAnswers: item.acceptableAnswers?.participle || [item.participle],
       createdAt: Date.now()
     });
   });

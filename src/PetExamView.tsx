@@ -319,12 +319,12 @@ export function PetExamRunner({ user }: { user: any }) {
           } else if (q.part === 'part2_a') {
             const rowId = q.verbRowId || 1;
             if (!p2aMap[rowId]) {
-              const zhMatch = q.prompt.match(/動詞填空 \(([^)]+)\)/);
+              const zhMatch = q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/);
               const subMatch = q.prompt.match(/主詞:\s*([^[]+)/);
               p2aMap[rowId] = {
                 id: rowId,
-                verbChinese: zhMatch ? zhMatch[1] : '動詞',
-                subject: subMatch ? subMatch[1].trim() : 'He',
+                verbChinese: zhMatch ? zhMatch[1] : (q.clue ? q.clue.replace(/動詞：([^，]+).*/, '$1') : '動詞'),
+                subject: subMatch ? subMatch[1].trim() : '-',
                 presentSimple: '',
                 pastSimple: '',
                 participle: '',
@@ -732,7 +732,7 @@ export function PetExamRunner({ user }: { user: any }) {
             <div className="space-y-3 text-xs">
               {examResult.reviewDetails.sec2A.map((item: any) => (
                 <div key={item.id} className="border border-[#EAE6DF] rounded-xl p-3 bg-[#FDFBF7]">
-                  <p className="font-bold text-[#4A3F35] mb-2">{item.id}. {item.verbChinese} (主詞: {item.subject})</p>
+                  <p className="font-bold text-[#4A3F35] mb-2">{item.id}. {item.verbChinese}{item.subject && item.subject !== '-' ? ` (主詞: ${item.subject})` : ''}</p>
                   <div className="grid grid-cols-3 gap-2">
                     <div className={`p-2 rounded ${item.present.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
                       <p className="text-[#8C7A6B]">Present Simple</p>
@@ -988,10 +988,10 @@ export function PetExamRunner({ user }: { user: any }) {
                 Part II – Verbs · Section A
               </span>
               <h4 className="text-lg font-bold text-[#4A3F35] mt-2">
-                Fill in the correct verb tense. (動詞時態填空，共 5 組動詞，15 格)
+                Fill in the correct verb forms. (不規則動詞三態填空，共 5 組動詞，15 格)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                依照每行指定的主詞 (Subject) 與動詞中文意思，於表格中填入 Present Simple (現在式)、Past Simple (過去式)、Participle (完成式/過去分詞)。
+                依據動詞與中文意思，於表格中填入 Base Form (原形/現在式)、Past Simple (過去式)、Participle (過去分詞)。
               </p>
             </div>
 
@@ -1004,10 +1004,9 @@ export function PetExamRunner({ user }: { user: any }) {
                 <thead>
                   <tr className="bg-[#EAE2D3]/60 text-[#4A3F35]">
                     <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Verb (動詞)</th>
-                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Subject (主詞)</th>
-                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Present Simple</th>
-                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Past Simple</th>
-                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Participle</th>
+                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Base Form (原形)</th>
+                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Past Simple (過去式)</th>
+                    <th className="p-3.5 border-b border-[#EAE6DF] font-bold">Participle (過去分詞)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAE6DF]">
@@ -1016,15 +1015,12 @@ export function PetExamRunner({ user }: { user: any }) {
                       <td className="p-3.5 font-bold text-[#4A3F35]">
                         {row.verbChinese}
                       </td>
-                      <td className="p-3.5 font-medium text-[#8C7A6B]">
-                        {row.subject}
-                      </td>
                       <td className="p-2.5">
                         <input
                           type="text"
                           value={answers2A[`${row.id}_present`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_present`]: e.target.value })}
-                          placeholder="現在式..."
+                          placeholder="原形 (Base Form)..."
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
@@ -1033,7 +1029,7 @@ export function PetExamRunner({ user }: { user: any }) {
                           type="text"
                           value={answers2A[`${row.id}_past`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_past`]: e.target.value })}
-                          placeholder="過去式..."
+                          placeholder="過去式 (Past Simple)..."
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
@@ -1042,7 +1038,7 @@ export function PetExamRunner({ user }: { user: any }) {
                           type="text"
                           value={answers2A[`${row.id}_participle`] || ''}
                           onChange={e => setAnswers2A({ ...answers2A, [`${row.id}_participle`]: e.target.value })}
-                          placeholder="過去分詞..."
+                          placeholder="過去分詞 (Participle)..."
                           className="w-full bg-white border border-[#D5CFC4] rounded-xl px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                         />
                       </td>
