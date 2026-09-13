@@ -30,7 +30,6 @@ import {
   BookOpen, 
   ChevronRight, 
   HelpCircle,
-  FileText,
   Sparkles,
   AlertTriangle,
   Upload,
@@ -298,7 +297,6 @@ export function PetExamRunner({ user }: { user: any }) {
         const p1b: any[] = [];
         const p2aMap: Record<number, any> = {};
         const p2b: any[] = [];
-        let extractedClozePassage = '';
 
         qSnap.docs.forEach(d => {
           const q = d.data();
@@ -344,9 +342,6 @@ export function PetExamRunner({ user }: { user: any }) {
               p2aMap[rowId].acceptableAnswers.participle = q.acceptableAnswers || [q.correctAnswer];
             }
           } else if (q.part === 'part2_b') {
-            if (q.clozePassage && !extractedClozePassage) {
-              extractedClozePassage = q.clozePassage;
-            }
             p2b.push({
               id: q.itemNumber || p2b.length + 1,
               sentence: q.prompt.replace(/\[Part II - Sec B.*?\]\s*(?:第\s*)?\d+\.\s*/, ''),
@@ -375,7 +370,6 @@ export function PetExamRunner({ user }: { user: any }) {
             sectionB_sentences: p1b
           },
           part2_verbs: {
-            clozePassage: extractedClozePassage || (dateId === '0909' ? SAMPLE_0909_PET_EXAM.part2_verbs.clozePassage : undefined),
             sectionA_tenses: p2aList,
             sectionB_sentences: p2b
           }
@@ -1083,30 +1077,12 @@ export function PetExamRunner({ user }: { user: any }) {
                 Part II – Verbs · Section B
               </span>
               <h4 className="text-lg font-bold text-[#4A3F35] mt-2">
-                Verb Tense Cloze Test (時態克漏字篇章測驗，共 5 題)
+                Verb Tense Sentence Completion (時態獨立單句填空，共 5 題)
               </h4>
               <p className="text-xs text-[#8C7A6B] mt-1">
-                請閱讀下方篇章短文情境與上下文時態線索，為題幹中的原形動詞填入<strong>正確的時態變化形</strong>（過去式、現在完成式、進行式或適當原形）。
+                請閱讀下方 5 題獨立生活語境單句（無動詞括號提示），<strong>自主從上方 Section A 的 5 個動詞中選詞</strong>，並依句意結構與時間線索填入<strong>正確的時態變化形</strong>（每題 1 分，共 5 分）。
               </p>
             </div>
-
-            {/* 時態篇章短文 Cloze Passage */}
-            {paper.part2_verbs.clozePassage && (
-              <div className="bg-[#F5F5F0] border border-[#EAE6DF] rounded-2xl p-5 space-y-2.5">
-                <div className="flex items-center gap-2 text-[#4A3F35] font-bold text-sm">
-                  <FileText size={16} className="text-[#72816B]" />
-                  <span>時態克漏字篇章短文 (Cloze Passage)</span>
-                </div>
-                <div className="bg-white p-4 sm:p-5 rounded-xl border border-[#EAE6DF] shadow-xs">
-                  <p className="text-sm sm:text-base text-[#4A3F35] leading-relaxed font-serif">
-                    {paper.part2_verbs.clozePassage}
-                  </p>
-                </div>
-                <p className="text-xs text-[#8C7A6B]">
-                  💡 請注意上下文故事時態一致性及時間指示詞，完成下方第 1 至 5 題的動詞時態作答。
-                </p>
-              </div>
-            )}
 
             <div className="space-y-3.5">
               {(paper.part2_verbs?.sectionB_sentences || []).map(item => (
@@ -1123,7 +1099,7 @@ export function PetExamRunner({ user }: { user: any }) {
                       type="text"
                       value={answers2B[item.id] || ''}
                       onChange={e => setAnswers2B({ ...answers2B, [item.id]: e.target.value })}
-                      placeholder="填入正確動詞時態..."
+                      placeholder="請從 Sec A 動詞選詞並填入正確時態..."
                       className="w-full max-w-md bg-white border border-[#D5CFC4] rounded-xl px-3.5 py-2 text-base sm:text-sm text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] h-11 sm:h-10"
                     />
                   </div>

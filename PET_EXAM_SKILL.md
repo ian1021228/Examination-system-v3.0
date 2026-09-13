@@ -20,20 +20,21 @@
 2. **第二部分 (Part II – Verbs，共 20 分)**：
    - **考試範圍來源**：嚴格依循《週考範圍.pdf》表格中的**「最右邊直排」（即【動詞考試進度】）**。
    - **動詞表依據**：動詞全部收錄於《OD單字表 L4 (含動詞表)》最後一頁（第 16 頁）之《100 MOST COMMON ESL IRREGULAR VERBS LIST》（100 個常用不規則動詞表）。
-   - **題型必備要求**：**第二部分務必要考「時態填空」和「時態克漏字」**！
+   - **題型必備要求**：**第二部分務必要考「時態填空」和「動詞時態獨立單句填空（無短文、無括號提示）」**！
    - **結構**：
      - **Section A – 時態填空 (Verb Tense Conjugation Table，共 15 分)**：
        - 從當週進度範圍挑選 5 組動詞。
        - 指定主詞代名詞（如 He, She, They, We, I），考三態時態變化：Present Simple (現在式)、Past Simple (過去式)、Participle (完成式/過去分詞)，共 5 組 x 3 態 = 15 格（每格 1 分，共 15 分）。
-     - **Section B – 時態克漏字 (Verb Tense Cloze Test / Passage Cloze，共 5 分)**：
-       - 核心原則：**考點為「動詞時態判斷與變化」**！學生需根據時間副詞（yesterday, ago, since, now, while 等）與上下文情境線索填入正確時態。
-       - 包含一段連貫的短文篇章（Cloze Passage），在篇章中挖空 5 處，括號內附上動詞原形（例如 `(awake)`, `(blow)`, `(beat)` 等，動詞取自當週範圍）。
-       - 依句意時態填入過去式（如 blew, awoke）、完成式（has broken）、原形或單三現在式等。共 5 題（每題 1 分，共 5 分）。
+     - **Section B – 時態獨立單句填空 (Verb Tense Sentence Completion，共 5 分)**：
+       - **完全無短文篇章**：沒有任何 `clozePassage`，不考整篇閱讀克漏字。
+       - **5 題完全獨立的語境單句**：每回僅有 5 道互相獨立的日常生活造句（1~5 題，每題 1 分，共 5 分）。
+       - **無動詞原形提示**：句末不附括號提示（如無 `(blow)`、`(awake)` 等），要求學生自主從 Part II Sec A 的 5 個動詞中選詞，並依句型與時間副詞變換為正確時態。
+       - 核心考點為動詞語境選擇與時態判斷變化（現在式、過去式、現在完成式等）。共 5 題（每題 1 分，共 5 分）。
 
 3. **系統自動歸類核心規範：每一題必須明確標註所屬日期 (`examDate`)**：
    - 本測驗系統支援「**匯入指定考期之 PET 專用考卷 JSON 後，自動將每道題目精準歸類為正確的日期**」。
    - 因此，產出的 JSON 中**每一道考題物件內，都必須明確帶有 `"examDate": "MMDD"`（如 `"examDate": "0916"`）**！
-   - 涵蓋範圍：Part I Section A 30 題、Part I Section B 20 題、Part II Section A 5 組動詞、Part II Section B 5 題時態克漏字。
+   - 涵蓋範圍：Part I Section A 30 題、Part I Section B 20 題、Part II Section A 5 組動詞、Part II Section B 5 題獨立動詞時態單句填空。
 
 ---
 
@@ -158,9 +159,6 @@ interface PetExamPaper {
   };
   
   part2_verbs: {
-    // 時態克漏字篇章閱讀短文（包含 (1) ________ 至 (5) ________ 之段落）
-    clozePassage: string;
-    
     // 5 組動詞三態時態填空（15 格），動詞出自該週「動詞考試進度」
     sectionA_tenses: Array<{
       id: number; // 1 ~ 5
@@ -177,11 +175,11 @@ interface PetExamPaper {
       };
     }>;
     
-    // 5 題時態克漏字，題幹附有動詞原形括號提示，測驗時態變化
+    // 5 題獨立動詞時態填空（完全無短文、無動詞原形括號提示，自主從 Sec A 選詞並變換時態）
     sectionB_sentences: Array<{
       id: number; // 1 ~ 5
       examDate: string; // 【必須明確標註所屬考期日期】，如 "0916"
-      sentence: string; // 句中含有 ________ 及 (原形動詞)
+      sentence: string; // 句中含有 ________ 空格，句末絕無動詞原形提示
       correctAnswer: string; // 正確時態變化形（如 "blew", "awoke", "has broken"）
       acceptableAnswers?: string[];
       clue?: string; // 時態與文法判斷線索
@@ -258,7 +256,6 @@ interface PetExamPaper {
     ]
   },
   "part2_verbs": {
-    "clozePassage": "Yesterday morning, an unexpected storm arrived. The cold wind (1) ________ strongly through the trees and shook our windows. When I (2) ________ from my sleep at dawn, I heard thunder rumbling in the distance. My heart (3) ________ fast because the loud noise startled me. Soon after the sun rose, the town cleanup crew (4) ________ their work clearing the fallen branches. Meanwhile, our neighbor warned us to keep our pets inside so stray dogs wouldn't get scared and (5) ________ anyone.",
     "sectionA_tenses": [
       {
         "id": 1,
@@ -332,11 +329,11 @@ interface PetExamPaper {
       }
     ],
     "sectionB_sentences": [
-      { "id": 1, "examDate": "0909", "sentence": "The cold wind (1) ________ strongly through the trees yesterday. (blow)", "correctAnswer": "blew", "acceptableAnswers": ["Blew", "blew"], "clue": "根據 yesterday 與上下文敘事，填入過去式 (blew)" },
-      { "id": 2, "examDate": "0909", "sentence": "When I (2) ________ from my sleep at dawn, I heard thunder. (awake)", "correctAnswer": "awoke", "acceptableAnswers": ["Awoke", "awoke"], "clue": "根據過去時態上下文，填入過去式 (awoke)" },
-      { "id": 3, "examDate": "0909", "sentence": "My heart (3) ________ fast because the loud noise startled me. (beat)", "correctAnswer": "beat", "acceptableAnswers": ["Beat", "beat"], "clue": "根據過去式 startled，beat 的過去式為 beat" },
-      { "id": 4, "examDate": "0909", "sentence": "Soon after the sun rose, the cleanup crew (4) ________ their work. (begin)", "correctAnswer": "began", "acceptableAnswers": ["Began", "began"], "clue": "根據 rose (過去式)，begin 的過去式為 began" },
-      { "id": 5, "examDate": "0909", "sentence": "Keep pets inside so stray dogs will not get scared and (5) ________ anyone. (bite)", "correctAnswer": "bite", "acceptableAnswers": ["Bite", "bite"], "clue": "助動詞 will not 後接原形動詞 (bite)" }
+      { "id": 1, "examDate": "0909", "sentence": "The cold wind ________ strongly through the tall trees yesterday afternoon.", "correctAnswer": "blew", "acceptableAnswers": ["Blew", "blew"], "clue": "自主從 Sec A 動詞 (blow) 選詞並依 yesterday 變換過去式 blew" },
+      { "id": 2, "examDate": "0909", "sentence": "When I ________ from my deep sleep at dawn, I heard thunder in the distance.", "correctAnswer": "awoke", "acceptableAnswers": ["Awoke", "awoke"], "clue": "自主從 Sec A 動詞 (awake) 選詞並依過去敘事 heard 變換過去式 awoke" },
+      { "id": 3, "examDate": "0909", "sentence": "His heart ________ fast because the sudden loud noise startled him.", "correctAnswer": "beat", "acceptableAnswers": ["Beat", "beat"], "clue": "自主從 Sec A 動詞 (beat) 選詞並依過去式 startled 變換過去式 beat" },
+      { "id": 4, "examDate": "0909", "sentence": "Soon after the sun rose, the town cleanup crew ________ their work on the street.", "correctAnswer": "began", "acceptableAnswers": ["Began", "began"], "clue": "自主從 Sec A 動詞 (begin) 選詞並依 rose 變換過去式 began" },
+      { "id": 5, "examDate": "0909", "sentence": "Please be careful around the frightened dog so it will not ________ anyone.", "correctAnswer": "bite", "acceptableAnswers": ["Bite", "bite"], "clue": "自主從 Sec A 動詞 (bite) 選詞，助動詞 will not 後接原形動詞 bite" }
     ]
   }
 }
@@ -356,9 +353,12 @@ interface PetExamPaper {
 >    - Section B 產出 20 題句子填空，填入的單字**必須 100% 取自 Section A 的 30 個單字**。
 >    - **嚴禁顯示 Section A 單字候選庫（No Word Bank）**，考查學生主動拼寫記憶。
 > 2. **Part II (Verbs) 範圍**：查閱進度表『最右邊直排（動詞考試進度）』——本週動詞範圍為【break - choose】（動詞三態表第 16 頁動詞編號 7~12：break, bring, build, buy, catch, choose）。
->    - **務必考時態填空和時態克漏字**：
+>    - **務必考時態填空與時態獨立單句填空**：
 >    - Section A【時態填空】：挑選 5 組動詞，指定主詞（如 He, They, We 等），填入現在式、過去式、過去分詞/完成式（共 15 格）。
->    - Section B【時態克漏字】：提供一篇篇章短文 (clozePassage)，並附 5 題括號標記原形動詞之時態克漏字題目，測驗過去式、完成式、進行式等時態變化。
+>    - Section B【動詞時態獨立單句填空（完全無短文篇章、無動詞原形提示）】：
+>      * **完全無短文篇章**：沒有任何 `clozePassage`，不考整篇閱讀克漏字。
+>      * **5 題完全獨立的語境單句**：每回僅有 5 道互相獨立的日常生活造句（1~5 題，每題 1 分）。
+>      * **無動詞原形提示**：句末不附括號提示（如無 (blow)），要求學生自主從 Part II Sec A 的 5 個動詞中選詞，並依句型與時間副詞變換為正確時態。
 > 3. **【關鍵要求：每一題物件內皆必須明確標註所屬日期 `"examDate": "0916"`】**：
 >    - 包含 Part I Sec A (1~30 題)、Sec B (1~20 題)、Part II Sec A (1~5 組)、Sec B (1~5 題) 的每一題 JSON 物件中，都必須包含 `"examDate": "0916"`，讓系統匯入時能全自動將題目歸類為正確的考期日期！
 > 

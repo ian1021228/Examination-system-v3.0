@@ -82,9 +82,8 @@ export interface PetExamPaper {
     sectionB_sentences: PetVocabSentenceItem[]; // 20 題 (20分)
   };
   part2_verbs: {
-    clozePassage?: string; // 時態克漏字篇章短文（選填，若有則呈現篇章閱讀）
     sectionA_tenses: PetVerbTenseItem[]; // 5 組動詞 x 3 態 = 15 格 (15分) 時態填空
-    sectionB_sentences: PetVerbSentenceItem[]; // 5 題 (5分) 時態克漏字
+    sectionB_sentences: PetVerbSentenceItem[]; // 5 題 (5分) 時態填空（5題完全獨立語境單句，無短文、無括號提示）
   };
 }
 
@@ -180,7 +179,6 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
     ]
   },
   part2_verbs: {
-    clozePassage: "Yesterday morning, an unexpected storm arrived. The cold wind (1) ________ strongly through the trees and shook our windows. When I (2) ________ from my sleep at dawn, I heard thunder rumbling in the distance. My heart (3) ________ fast because the loud noise startled me. Soon after the sun rose, the town cleanup crew (4) ________ their work clearing the fallen branches. Meanwhile, our neighbor warned us to keep our pets inside so stray dogs wouldn't get scared and (5) ________ anyone.",
     sectionA_tenses: [
       {
         id: 1,
@@ -249,11 +247,11 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
       }
     ],
     sectionB_sentences: [
-      { id: 1, sentence: 'The cold wind (1) ________ strongly through the trees yesterday. (blow)', correctAnswer: 'blew', acceptableAnswers: ['Blew', 'blew'], clue: '根據 yesterday 與上下文敘事，填入過去式 (blew)' },
-      { id: 2, sentence: 'When I (2) ________ from my sleep at dawn, I heard thunder. (awake)', correctAnswer: 'awoke', acceptableAnswers: ['Awoke', 'awoke'], clue: '根據過去時態上下文，填入過去式 (awoke)' },
-      { id: 3, sentence: 'My heart (3) ________ fast because the loud noise startled me. (beat)', correctAnswer: 'beat', acceptableAnswers: ['Beat', 'beat'], clue: '根據過去式 startled，beat 的過去式為 beat' },
-      { id: 4, sentence: 'Soon after the sun rose, the cleanup crew (4) ________ their work. (begin)', correctAnswer: 'began', acceptableAnswers: ['Began', 'began'], clue: '根據 rose (過去式)，begin 的過去式為 began' },
-      { id: 5, sentence: 'Keep pets inside so stray dogs will not get scared and (5) ________ anyone. (bite)', correctAnswer: 'bite', acceptableAnswers: ['Bite', 'bite'], clue: '助動詞 will not 後接原形動詞 (bite)' }
+      { id: 1, sentence: 'The cold wind ________ strongly through the tall trees yesterday afternoon.', correctAnswer: 'blew', acceptableAnswers: ['Blew', 'blew'], clue: '從 Section A 動詞 (blow) 選詞，依據時間副詞 yesterday 填入過去式 blew' },
+      { id: 2, sentence: 'When I ________ from my deep sleep at dawn, I heard thunder in the distance.', correctAnswer: 'awoke', acceptableAnswers: ['Awoke', 'awoke'], clue: '從 Section A 動詞 (awake) 選詞，依據過去敘事 heard 填入過去式 awoke' },
+      { id: 3, sentence: 'His heart ________ very fast because the sudden loud noise startled him.', correctAnswer: 'beat', acceptableAnswers: ['Beat', 'beat'], clue: '從 Section A 動詞 (beat) 選詞，依據過去式 startled 填入過去式 beat' },
+      { id: 4, sentence: 'Soon after the sun rose, the town cleanup crew ________ their work on the street.', correctAnswer: 'began', acceptableAnswers: ['Began', 'began'], clue: '從 Section A 動詞 (begin) 選詞，依據 rose 填入過去式 began' },
+      { id: 5, sentence: 'Please be careful around the frightened dog so it will not ________ anyone.', correctAnswer: 'bite', acceptableAnswers: ['Bite', 'bite'], clue: '從 Section A 動詞 (bite) 選詞，助動詞 will not 後接原形動詞 bite' }
     ]
   }
 };
@@ -369,7 +367,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
     });
   });
 
-  // 4. Part II - Section B: 5 題時態克漏字填空
+  // 4. Part II - Section B: 5 題獨立單句動詞時態填空（無短文、無括號提示）
   (paper.part2_verbs?.sectionB_sentences || []).forEach(item => {
     const itemDate = item.examDate || defaultDate;
     result.push({
@@ -381,11 +379,10 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      clozePassage: paper.part2_verbs.clozePassage || '',
-      prompt: `[Part II - Sec B 時態克漏字] 第 ${item.id} 題. ${item.sentence}`,
+      prompt: `[Part II - Sec B 時態填空] 第 ${item.id} 題. ${item.sentence}`,
       correctAnswer: item.correctAnswer,
       clue: item.clue || `答案是：${item.correctAnswer}`,
-      explanation: `【Part II Section B 動詞時態克漏字】${item.sentence} 正確填入動詞時態為「${item.correctAnswer}」`,
+      explanation: `【Part II Section B 動詞時態填空】${item.sentence} 正確填入動詞時態為「${item.correctAnswer}」`,
       acceptableAnswers: item.acceptableAnswers || [],
       createdAt: Date.now()
     });
@@ -403,7 +400,7 @@ export const PET_AI_SKILL_MARKDOWN = `# Role & Identity (角色設定)
 依據官方教學進度表《週考範圍.pdf》與《OD單字表 L4 (含動詞表)》：
 1. **第一部分 (Part I – Vocabulary) 範圍**：查閱表格中【右邊數來第二直排（單字考試進度）】（如 a.an - actually, ad - animal 等）。
 2. **第二部分 (Part II – Verbs) 範圍**：查閱表格中【最右邊直排（動詞考試進度）】（如 awake - blow, break - choose 等）。動詞出自單字表最後一頁《100 MOST COMMON ESL IRREGULAR VERBS LIST》。
-3. **第二部分務必考「時態填空」與「時態克漏字」**！
+3. **第二部分務必考「時態填空」與「時態獨立單句填空（無短文、無動詞括號提示）」**！
 
 ---
 
@@ -438,10 +435,11 @@ export const PET_AI_SKILL_MARKDOWN = `# Role & Identity (角色設定)
    - 指定主詞代名詞（如 He, They, We, I, She），填入現在式 (presentSimple)、過去式 (pastSimple)、完成式/過去分詞 (participle)，共 15 格。
    - 每組動詞物件皆須包含 \`"examDate"\`。
 
-4. **Section B – Verb Tense Sentence Completion (時態獨立單句填空測驗，1~5 題，共 5 分)**
-   - **題型模式**：全部維持樣卷原本的 **5 題獨立單句模式 (write-in)**，不強制整合成篇章閱讀。
-   - 題幹提供獨立語境單句與動詞原形括號提示，例如 "(blow)"，考點為動詞時態判斷與變化（現在式、過去式、完成式等），共 5 題。
-   - 每題物件皆須包含 \`"examDate"\`。
+4. **Section B – Verb Tense Sentence Completion (時態獨立單句填空，1~5 題，共 5 分)**
+   - **完全無短文篇章**：沒有任何 clozePassage，不考整篇閱讀克漏字。
+   - **5 題完全獨立的語境單句**：每回僅有 5 道互相獨立的日常生活造句（1~5 題，每題 1 分）。
+   - **無動詞原形提示**：句末不附括號提示（如無 (blow)），要求學生自主從 Part II Sec A 的 5 個動詞中選詞，並依句型與時間副詞變換為正確時態。
+   - **每題皆標註 examDate**：每題物件皆須包含 \`"examDate"\`，完整支援系統全自動分日期歸類匯入。
 
 ---
 
@@ -493,10 +491,10 @@ export const PET_AI_SKILL_MARKDOWN = `# Role & Identity (角色設定)
         {
           "id": 1,
           "examDate": "0909",
-          "sentence": "The cold wind (1) ________ strongly through the trees yesterday. (blow)",
+          "sentence": "The cold wind ________ strongly through the trees yesterday afternoon.",
           "correctAnswer": "blew",
           "acceptableAnswers": ["Blew", "blew"],
-          "clue": "根據 yesterday 填入過去式 blew"
+          "clue": "自主從 Sec A 動詞 (blow) 選詞並依 yesterday 變換過去式 blew"
         }
       ]
     }

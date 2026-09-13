@@ -1,11 +1,11 @@
 {
-  "projectId": "fifth-garden-kdw77",
-  "appId": "1:26630907117:web:dc4007ed1e113c6b7198e4",
-  "apiKey": "AIzaSyClzsChTDby_usEUlj67juic4G2O_mToMA",
-  "authDomain": "fifth-garden-kdw77.firebaseapp.com",
-  "storageBucket": "fifth-garden-kdw77.firebasestorage.app",
-  "messagingSenderId": "26630907117",
+  "projectId": "ket-training-9b88d",
+  "appId": "1:1048640604545:web:97763f7dec221ca9eac080",
+  "apiKey": "AIzaSyCMwOOb0ib_gl5A2cgqw9Lqfrw8D_zJoQM",
+  "authDomain": "ket-training-9b88d.firebaseapp.com",
+  "storageBucket": "ket-training-9b88d.firebasestorage.app",
+  "messagingSenderId": "1048640604545",
   "measurementId": "",
-  "oAuthClientId": "26630907117-1ig1bvtse7e5a5elabpldue2ei7nfjif.apps.googleusercontent.com",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
