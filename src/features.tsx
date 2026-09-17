@@ -42,7 +42,7 @@ export interface MaterialProgress {
 export interface CourseMaterial {
   id?: string;
   subjectId: string;
-  unit: number;
+  unit: number | string;
   type: 'video' | 'pdf' | 'article' | 'lesson';
   title: string;
   contentUrl: string;
@@ -52,6 +52,13 @@ export interface CourseMaterial {
   createdAt: number;
   requiredMaterialIds?: string[];
 }
+
+export const compareUnits = (u1: any, u2: any) => {
+  const n1 = Number(u1);
+  const n2 = Number(u2);
+  if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
+  return String(u1 ?? '').localeCompare(String(u2 ?? ''), 'zh-Hant');
+};
 
 export interface DiscussionMsg {
   id?: string;
@@ -327,7 +334,8 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
     const snap = await getDocs(q);
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as CourseMaterial));
     data.sort((a, b) => {
-      if (a.unit !== b.unit) return a.unit - b.unit;
+      const uDiff = compareUnits(a.unit, b.unit);
+      if (uDiff !== 0) return uDiff;
       return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0);
     });
     setMaterials(data);
@@ -457,11 +465,11 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   };
 
   const groupedMaterials = materials.reduce((acc, curr) => {
-    const unit = curr.unit || 1;
+    const unit = curr.unit !== undefined && curr.unit !== null && String(curr.unit).trim() !== '' ? String(curr.unit).trim() : '1';
     if (!acc[unit]) acc[unit] = [];
     acc[unit].push(curr);
     return acc;
-  }, {} as Record<number, CourseMaterial[]>);
+  }, {} as Record<string, CourseMaterial[]>);
 
   const formatTimeSpent = (seconds: number) => {
     if (!seconds || seconds <= 0) return '未閱讀 (0s)';
@@ -523,7 +531,7 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-sm font-bold text-gray-700">單元</label>
-                  <input type="number" value={newMat.unit} onChange={e => setNewMat({...newMat, unit: Number(e.target.value)})} className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                  <input type="text" value={newMat.unit ?? ''} onChange={e => setNewMat({...newMat, unit: e.target.value})} placeholder="例如: 1 或 第一課" className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
                 </div>
                 <div className="md:col-span-7">
                   <label className="text-sm font-bold text-gray-700">標題</label>
@@ -582,7 +590,7 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
           <div className="space-y-4">
             {Object.entries(groupedMaterials).map(([unit, mats]) => (
               <div key={unit} className="mb-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">Unit {unit}</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">{/^\d+$/.test(unit) ? `Unit ${unit}` : unit}</h3>
                 <div className="space-y-3">
                   {mats.map(m => {
                     const isBeingDragged = draggedId === m.id;
@@ -1235,7 +1243,8 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as CourseMaterial));
       data.sort((a, b) => {
-        if (a.unit !== b.unit) return a.unit - b.unit;
+        const uDiff = compareUnits(a.unit, b.unit);
+        if (uDiff !== 0) return uDiff;
         return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0);
       });
       setMaterials(data);
@@ -1334,14 +1343,18 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
   }, [activeMat?.id, user?.uid]);
 
   const toggleTTS = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !window.speechSynthesis) {
+      return;
+    }
     if (isPlayingTTS) {
       window.speechSynthesis.cancel();
       setIsPlayingTTS(false);
     } else if (activeMat?.markdownNotes) {
-      const textToRead = activeMat.markdownNotes.replace(/<[^>]*>?/gm, '').replace(/[#*_]/g, '');
+      const textToRead = (activeMat.markdownNotes || '').replace(/<[^>]*>?/gm, '').replace(/[#*_]/g, '');
       const utterance = new SpeechSynthesisUtterance(textToRead);
       utterance.lang = 'zh-TW';
       utterance.onend = () => setIsPlayingTTS(false);
+      utterance.onerror = () => setIsPlayingTTS(false);
       window.speechSynthesis.speak(utterance);
       setIsPlayingTTS(true);
     }
@@ -1372,11 +1385,11 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
   };
 
   const groupedMaterials = materials.reduce((acc, curr) => {
-    const unit = curr.unit || 1;
+    const unit = curr.unit !== undefined && curr.unit !== null && String(curr.unit).trim() !== '' ? String(curr.unit).trim() : '1';
     if (!acc[unit]) acc[unit] = [];
     acc[unit].push(curr);
     return acc;
-  }, {} as Record<number, CourseMaterial[]>);
+  }, {} as Record<string, CourseMaterial[]>);
 
   if (isFullscreen && activeMat) {
     return createPortal(
@@ -1534,14 +1547,20 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
         
         {Object.entries(groupedMaterials).map(([unit, mats]) => (
           <div key={unit} className="mb-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">Unit {unit}</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">{/^\d+$/.test(unit) ? `Unit ${unit}` : unit}</h3>
             <div className="space-y-3">
               {mats.map(m => {
                 const isCompleted = progressData[m.id!]?.completed || false;
                 return (
                   <button 
                     key={m.id} 
-                    onClick={() => { setActiveMat(m); window.speechSynthesis.cancel(); setIsPlayingTTS(false); }} 
+                    onClick={() => { 
+                      setActiveMat(m); 
+                      if (typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis) {
+                        window.speechSynthesis.cancel();
+                      }
+                      setIsPlayingTTS(false); 
+                    }} 
                     className={`w-full text-left p-4 rounded-xl border transition-all flex items-center justify-between ${
                       activeMat?.id === m.id 
                         ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-[1.02]' 
@@ -2296,7 +2315,7 @@ export function StudyTimer() {
       }
     }
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
+      audioCtxRef.current.resume().catch(() => {});
     }
     return audioCtxRef.current;
   };

@@ -421,6 +421,119 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
   return result;
 }
 
+// 收集週考中出現過的所有單字集合（小寫、去除多餘符號）
+export function getWeeklyExamWordsSet(extraQuestions?: any[]): Set<string> {
+  const words = new Set<string>();
+
+  const addWord = (w?: string) => {
+    if (!w || typeof w !== 'string') return;
+    const cleaned = w.toLowerCase().trim().replace(/[.,/#!$%^&*;:{}=\-_~()?'"、，。？！；：]/g, ' ');
+    cleaned.split(/\s+/).forEach(token => {
+      const t = token.trim();
+      if (t.length > 1) {
+        words.add(t);
+      }
+    });
+  };
+
+  // 1. 從 SAMPLE_0909_PET_EXAM 收集
+  if (SAMPLE_0909_PET_EXAM?.part1_vocabulary?.sectionA_translation) {
+    SAMPLE_0909_PET_EXAM.part1_vocabulary.sectionA_translation.forEach(i => {
+      addWord(i.english);
+      (i.acceptableAnswers || []).forEach(a => addWord(a));
+    });
+  }
+  if (SAMPLE_0909_PET_EXAM?.part1_vocabulary?.sectionB_sentences) {
+    SAMPLE_0909_PET_EXAM.part1_vocabulary.sectionB_sentences.forEach(i => {
+      addWord(i.correctAnswer);
+      (i.acceptableAnswers || []).forEach(a => addWord(a));
+    });
+  }
+  if (SAMPLE_0909_PET_EXAM?.part2_verbs?.sectionA_tenses) {
+    SAMPLE_0909_PET_EXAM.part2_verbs.sectionA_tenses.forEach(i => {
+      addWord(i.presentSimple);
+      addWord(i.pastSimple);
+      addWord(i.participle);
+      (i.acceptableAnswers?.presentSimple || []).forEach(a => addWord(a));
+      (i.acceptableAnswers?.pastSimple || []).forEach(a => addWord(a));
+      (i.acceptableAnswers?.participle || []).forEach(a => addWord(a));
+    });
+  }
+  if (SAMPLE_0909_PET_EXAM?.part2_verbs?.sectionB_sentences) {
+    SAMPLE_0909_PET_EXAM.part2_verbs.sectionB_sentences.forEach(i => {
+      addWord(i.correctAnswer);
+      (i.acceptableAnswers || []).forEach(a => addWord(a));
+    });
+  }
+
+  // 2. 從 PET_EXAM_DATES 的 verbsList 與單字範圍
+  PET_EXAM_DATES.forEach(d => {
+    (d.verbsList || []).forEach(v => addWord(v));
+    // 單字範圍拆解
+    if (d.vocabRange) {
+      d.vocabRange.split('-').forEach(p => addWord(p));
+    }
+  });
+
+  // 3. 從外部傳入題庫（例如 Firestore 中的題目）
+  if (Array.isArray(extraQuestions)) {
+    extraQuestions.forEach(q => {
+      if (!q) return;
+      if (q.subject === 'pet' || q.examDate) {
+        addWord(q.correctAnswer);
+        (q.acceptableAnswers || []).forEach((a: string) => addWord(a));
+        if (Array.isArray(q.subQuestions)) {
+          q.subQuestions.forEach((sq: any) => {
+            if (!sq) return;
+            addWord(sq.correctAnswer);
+            (sq.acceptableAnswers || []).forEach((a: string) => addWord(a));
+          });
+        }
+      }
+    });
+  }
+
+  return words;
+}
+
+// 判斷該題目是否包含週考出現過的單字
+export function isQuestionMatchingWeeklyExamWords(q: any, weeklyWordsSet: Set<string>): boolean {
+  if (!q || !weeklyWordsSet || weeklyWordsSet.size === 0) return false;
+  // 若該題目本身即為 pet 週考或具有考期標記
+  if (q.subject === 'pet' || q.examDate) return true;
+
+  const checkText = (text?: string): boolean => {
+    if (!text || typeof text !== 'string') return false;
+    const cleaned = text.toLowerCase().trim().replace(/[.,/#!$%^&*;:{}=\-_~()?'"、，。？！；：]/g, ' ');
+    const tokens = cleaned.split(/\s+/).filter(t => t.length > 1);
+    for (const token of tokens) {
+      if (weeklyWordsSet.has(token)) return true;
+    }
+    return false;
+  };
+
+  if (checkText(q.correctAnswer)) return true;
+  if (Array.isArray(q.acceptableAnswers)) {
+    for (const ans of q.acceptableAnswers) {
+      if (checkText(ans)) return true;
+    }
+  }
+
+  if (Array.isArray(q.subQuestions)) {
+    for (const sq of q.subQuestions) {
+      if (!sq) continue;
+      if (checkText(sq.correctAnswer)) return true;
+      if (Array.isArray(sq.acceptableAnswers)) {
+        for (const ans of sq.acceptableAnswers) {
+          if (checkText(ans)) return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 // 專用 AI 命題 Skill 文本 (供複製或下載)
 export const PET_AI_SKILL_MARKDOWN = `# Role & Identity (角色設定)
 你是一位劍橋國際英語認證 (Cambridge English Qualifications) PET / B1 Preliminary 級別的專業英檢命題主任兼測驗評量專家。

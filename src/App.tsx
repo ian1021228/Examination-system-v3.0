@@ -14,7 +14,7 @@ import html2pdf from 'html2pdf.js';
 import { ParticleEngine } from './ParticleEngine';
 import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile, Leaderboard, XPShop, StudyTimer, LearningAnalyticsDashboard } from './features';
 import { PetExamDateSelector, PetExamRunner, PetAdminPanel } from './PetExamView';
-import { isAnswerCorrect } from './petExam';
+import { isAnswerCorrect, getWeeklyExamWordsSet, isQuestionMatchingWeeklyExamWords } from './petExam';
 
 
 
@@ -46,7 +46,7 @@ export interface Question {
   itemNumber?: number;
   verbRowId?: number;
   acceptableAnswers?: string[];
-  unit: number;
+  unit: string | number;
   difficulty: 'easy' | 'medium' | 'hard';
   type: 'multiple_choice' | 'fill_in_the_blank' | 'question_group';
   prompt: string;
@@ -64,7 +64,7 @@ export interface Task {
   id: string;
   title: string;
   subject: Subject;
-  targetUnits: number[];
+  targetUnits: (string | number)[];
   difficulty: 'easy' | 'medium' | 'hard' | 'mixed';
   gameMode?: 'normal' | 'survival' | 'speed';
   questionCount: number;
@@ -74,6 +74,7 @@ export interface Task {
   qgCount?: number;
   selectionMode?: 'random' | 'manual';
   selectedQuestionIds?: string[];
+  filterWeeklyExamWords?: boolean;
   maxHearts?: number;
   timeLimit?: number;
   antiCheat?: boolean;
@@ -311,44 +312,84 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
   const [maxHearts, setMaxHearts] = useState<number>(3);
   const [timeLimit, setTimeLimit] = useState<number>(10);
   const [antiCheat, setAntiCheat] = useState<boolean>(false);
-  const [units, setUnits] = useState<number[]>([]);
+  const [units, setUnits] = useState<(string | number)[]>([]);
+  const [customUnitInput, setCustomUnitInput] = useState<string>('');
+  const [filterWeeklyExamWords, setFilterWeeklyExamWords] = useState<boolean>(false);
+
+  // 週考單字清單集合（包含真題、不規則動詞庫與題庫中 pet 題目）
+  const weeklyWordsSet = useMemo(() => {
+    return getWeeklyExamWordsSet(questions);
+  }, [questions]);
+
+  // 動態收集目前題庫已存在的所有單元，並融合目前已選單元
+  const availableUnitList = useMemo(() => {
+    const set = new Set<string>();
+    questions.forEach(q => {
+      if (q.unit !== undefined && q.unit !== null && String(q.unit).trim() !== '') {
+        set.add(String(q.unit).trim());
+      }
+    });
+    units.forEach(u => {
+      if (u !== undefined && u !== null && String(u).trim() !== '') {
+        set.add(String(u).trim());
+      }
+    });
+    if (set.size === 0) {
+      for (let i = 1; i <= (config.totalUnits || 10); i++) {
+        set.add(String(i));
+      }
+    }
+    return Array.from(set).sort((a, b) => {
+      const na = Number(a);
+      const nb = Number(b);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b, 'zh-Hant');
+    });
+  }, [questions, units, config.totalUnits]);
+
+  // 基礎題庫篩選核心（單元 + 週考單字過濾）
+  const baseFilteredQuestions = useMemo(() => {
+    let q = questions;
+    if (units.length > 0) {
+      q = q.filter(x => units.some(u => String(u).trim().toLowerCase() === String(x.unit).trim().toLowerCase()));
+    }
+    if (filterWeeklyExamWords) {
+      q = q.filter(x => !isQuestionMatchingWeeklyExamWords(x, weeklyWordsSet));
+    }
+    return q;
+  }, [questions, units, filterWeeklyExamWords, weeklyWordsSet]);
 
   const availableMmCount = useMemo(() => {
-    let q = questions.filter(x => !!x.mediaUrl);
-    if (units.length > 0) q = q.filter(x => units.includes(x.unit));
+    let q = baseFilteredQuestions.filter(x => !!x.mediaUrl);
     if (diff !== 'mixed') q = q.filter(x => x.difficulty === diff);
     return q.length;
-  }, [questions, units, diff]);
+  }, [baseFilteredQuestions, diff]);
 
   const availableQgCount = useMemo(() => {
-    let q = questions.filter(x => !x.mediaUrl && x.type === 'question_group');
-    if (units.length > 0) q = q.filter(x => units.includes(x.unit));
+    let q = baseFilteredQuestions.filter(x => !x.mediaUrl && x.type === 'question_group');
     if (diff !== 'mixed') q = q.filter(x => x.difficulty === diff);
     return q.length;
-  }, [questions, units, diff]);
+  }, [baseFilteredQuestions, diff]);
 
   const availableMcCount = useMemo(() => {
-    let q = questions.filter(x => !x.mediaUrl && x.type === 'multiple_choice');
-    if (units.length > 0) q = q.filter(x => units.includes(x.unit));
+    let q = baseFilteredQuestions.filter(x => !x.mediaUrl && x.type === 'multiple_choice');
     if (diff !== 'mixed') q = q.filter(x => x.difficulty === diff);
     return q.length;
-  }, [questions, units, diff]);
+  }, [baseFilteredQuestions, diff]);
 
   const availableFibCount = useMemo(() => {
-    let q = questions.filter(x => !x.mediaUrl && x.type === 'fill_in_the_blank');
-    if (units.length > 0) q = q.filter(x => units.includes(x.unit));
+    let q = baseFilteredQuestions.filter(x => !x.mediaUrl && x.type === 'fill_in_the_blank');
     if (diff !== 'mixed') q = q.filter(x => x.difficulty === diff);
     return q.length;
-  }, [questions, units, diff]);
+  }, [baseFilteredQuestions, diff]);
 
   const filteredManualQuestions = useMemo(() => {
-    let q = questions;
-    if (units.length > 0) q = q.filter(x => units.includes(x.unit));
+    let q = baseFilteredQuestions;
     if (diff !== 'mixed') q = q.filter(x => x.difficulty === diff);
     if (manualFilter === 'multimedia') q = q.filter(x => !!x.mediaUrl);
     else if (manualFilter !== 'all') q = q.filter(x => x.type === manualFilter && !x.mediaUrl);
     return q;
-  }, [questions, units, diff, manualFilter]);
+  }, [baseFilteredQuestions, diff, manualFilter]);
 
   const handleCreate = async () => {
     if (selectionMode === 'random') {
@@ -376,6 +417,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
         mmCount: selectionMode === 'random' ? mmCount : 0,
         qgCount: selectionMode === 'random' ? qgCount : 0,
         selectedQuestionIds: selectionMode === 'manual' ? manualSelectedQs : [],
+        filterWeeklyExamWords,
         maxHearts: gameMode === 'survival' ? (maxHearts || 1) : 0, 
         timeLimit, antiCheat
       };
@@ -407,13 +449,28 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
     setTimeLimit(t.timeLimit || 10);
     setAntiCheat(t.antiCheat || false);
     setUnits(t.targetUnits || []);
+    setFilterWeeklyExamWords(!!t.filterWeeklyExamWords);
     setEditingTaskId(t.id);
     setShowForm(true);
   };
 
-  const toggleUnit = (u: number) => {
-    if (units.includes(u)) setUnits(units.filter(x => x !== u));
-    else setUnits([...units, u]);
+  const toggleUnit = (u: string | number) => {
+    const strU = String(u).trim().toLowerCase();
+    if (units.some(x => String(x).trim().toLowerCase() === strU)) {
+      setUnits(units.filter(x => String(x).trim().toLowerCase() !== strU));
+    } else {
+      setUnits([...units, u]);
+    }
+  };
+
+  const addCustomUnit = () => {
+    const val = customUnitInput.trim();
+    if (!val) return;
+    const strVal = val.toLowerCase();
+    if (!units.some(x => String(x).trim().toLowerCase() === strVal)) {
+      setUnits([...units, val]);
+    }
+    setCustomUnitInput('');
   };
 
   const toggleTaskActive = async (t: Task) => {
@@ -440,7 +497,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                 setShowForm(false);
                 setEditingTaskId(null);
             } else {
-                setTitle(''); setDiff('mixed'); setGameMode('normal'); setMcCount(10); setFibCount(10); setUnits([]); setMaxHearts(3);
+                setTitle(''); setDiff('mixed'); setGameMode('normal'); setMcCount(10); setFibCount(10); setUnits([]); setFilterWeeklyExamWords(false); setCustomUnitInput(''); setMaxHearts(3);
                 setShowForm(true);
             }
         }} className="bg-[#C2A878] hover:bg-[#B39969] px-4 py-2 rounded-lg text-[#4A3F35] font-bold text-sm">
@@ -472,18 +529,73 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
           </div>
           
           <div className="flex flex-col space-y-2">
-            <label className="text-xs text-[#8C7A6B]">包含單元 (留空表示全範圍)</label>
-            <div className="flex flex-wrap gap-2">
-              {Array.from({length: config.totalUnits || 10}, (_, i) => i + 1).map(u => (
-                <button
-                  key={u}
-                  onClick={() => toggleUnit(u)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold ${units.includes(u) ? 'bg-[#4A3F35] text-white' : 'bg-[#EAE2D3] text-[#8C7A6B] hover:bg-[#D5CFC4]'}`}
-                >
-                  單元 {u}
+            <div className="flex justify-between items-center">
+              <label className="text-xs text-[#8C7A6B] font-medium">包含單元 (留空表示全範圍，單元可為任意數字或自訂文字)</label>
+              {units.length > 0 && (
+                <button type="button" onClick={() => setUnits([])} className="text-xs text-[#C2A878] hover:underline font-bold">
+                  清除所有選取 ({units.length})
                 </button>
-              ))}
+              )}
             </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              {availableUnitList.map(u => {
+                const isSelected = units.some(x => String(x).trim().toLowerCase() === u.toLowerCase());
+                return (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => toggleUnit(u)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${isSelected ? 'bg-[#4A3F35] text-white shadow-sm' : 'bg-[#EAE2D3] text-[#8C7A6B] hover:bg-[#D5CFC4]'}`}
+                  >
+                    {/^\d+$/.test(u) ? `單元 ${u}` : u}
+                  </button>
+                );
+              })}
+              
+              {/* 自訂單元輸入框 */}
+              <div className="inline-flex items-center gap-1">
+                <input
+                  type="text"
+                  value={customUnitInput}
+                  onChange={e => setCustomUnitInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomUnit(); } }}
+                  placeholder="+ 新增自訂單元..."
+                  className="text-xs bg-[#FDFBF7] border border-[#D5CFC4] rounded-full px-3 py-1 text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] w-32"
+                />
+                {customUnitInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={addCustomUnit}
+                    className="text-xs bg-[#C2A878] hover:bg-[#B39969] text-[#4A3F35] font-bold px-2 py-1 rounded-full"
+                  >
+                    加入
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 過濾週考出現過的單字選項 */}
+          <div className="bg-[#FAF7F2] border border-[#E5DFD5] rounded-xl p-3.5 transition-all">
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={filterWeeklyExamWords}
+                onChange={e => setFilterWeeklyExamWords(e.target.checked)}
+                className="mt-1 accent-[#C2A878] w-4 h-4 rounded cursor-pointer shrink-0"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-sm text-[#4A3F35]">過濾週考出現過的單字</span>
+                  <span className="text-[11px] font-semibold bg-[#E8DFD1] text-[#6A5A4A] px-2 py-0.5 rounded-full">
+                    已自動對齊每週 PET 題庫與不規則動詞庫 ({weeklyWordsSet.size} 個詞彙)
+                  </span>
+                </div>
+                <p className="text-xs text-[#7A6C5D] mt-1 leading-relaxed">
+                  開啟後，系統將自動比對並排除 PET 週考（包含第一大題單字中翻英、句子語境選填，以及第二大題動詞三態、時態填空）曾考過的所有單字題目，確保日常測驗與考前特訓不重複練習週考詞彙。
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="flex space-x-4 mb-2">
@@ -533,14 +645,15 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                       else setManualSelectedQs(manualSelectedQs.filter(id => id !== q.id));
                     }} className="mt-1 accent-[#C2A878]" />
                     <div className="flex-1 text-sm text-[#4A3F35]">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="bg-[#EAE2D3] text-[#8C7A6B] px-1.5 py-0.5 rounded text-[10px] font-bold">U{q.unit}</span>
+                      <div className="flex items-center space-x-2 mb-1 flex-wrap gap-y-1">
+                        <span className="bg-[#EAE2D3] text-[#8C7A6B] px-1.5 py-0.5 rounded text-[10px] font-bold">{/^\d+$/.test(String(q.unit)) ? `U${q.unit}` : q.unit}</span>
                         {q.type === 'multiple_choice' && !q.mediaUrl && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">選擇</span>}
                         {q.type === 'fill_in_the_blank' && !q.mediaUrl && <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-[10px] font-bold">填空</span>}
                         {q.type === 'question_group' && !q.mediaUrl && <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-[10px] font-bold">題組</span>}
                         {q.mediaUrl && <span className="bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded text-[10px] font-bold">多媒體</span>}
+                        {isQuestionMatchingWeeklyExamWords(q, weeklyWordsSet) && <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold">週考詞彙</span>}
                       </div>
-                      <p className="line-clamp-2">{q.prompt.replace(/\[SOURCE_IMAGE\]/g, '')}</p>
+                      <p className="line-clamp-2">{(q.prompt || '').replace(/\[SOURCE_IMAGE\]/g, '')}</p>
                     </div>
                   </label>
                 ))}
@@ -595,7 +708,8 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
               <p>模式: {t.gameMode === 'survival' ? '生存' : t.gameMode === 'speed' ? '速答' : '一般'}</p>
               <p>總題數: {t.questionCount} {t.selectionMode === 'manual' ? '(手動選題)' : `(選擇 ${t.mcCount||0}, 填空 ${t.fibCount||0}, 題組 ${t.qgCount||0}, 多媒體 ${t.mmCount||0})`}</p>
               <p>難度: {t.difficulty === 'mixed' ? '混合' : t.difficulty === 'easy' ? '簡單' : t.difficulty === 'medium' ? '中等' : '困難'}</p>
-              <p>範圍: {t.targetUnits?.length ? t.targetUnits.join(', ') : '全部單元'}</p>
+              <p>範圍: {t.targetUnits?.length ? t.targetUnits.map(u => /^\d+$/.test(String(u)) ? `單元 ${u}` : u).join(', ') : '全部單元'}</p>
+              {t.filterWeeklyExamWords && <p className="text-amber-700 font-semibold text-xs">✨ 已排除週考單字</p>}
               <p>愛心: {t.maxHearts ? t.maxHearts : '無限'}</p>
             </div>
             <div className="mt-4 pt-4 border-t border-[#EAE6DF] flex justify-end space-x-2">
@@ -718,7 +832,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
   const [newPrompt, setNewPrompt] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
   const [newOptions, setNewOptions] = useState('');
-  const [newUnit, setNewUnit] = useState(1);
+  const [newUnit, setNewUnit] = useState<string | number>(1);
   const [newDiff, setNewDiff] = useState<'easy'|'medium'|'hard'>('medium');
   const [newType, setNewType] = useState<'multiple_choice'|'fill_in_the_blank'|'question_group'>('multiple_choice');
   const [newSubQuestions, setNewSubQuestions] = useState<SubQuestion[]>([]);
@@ -733,7 +847,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
   const [editPrompt, setEditPrompt] = useState('');
   const [editAnswer, setEditAnswer] = useState('');
   const [editOptions, setEditOptions] = useState('');
-  const [editUnit, setEditUnit] = useState(1);
+  const [editUnit, setEditUnit] = useState<string | number>(1);
   const [editDiff, setEditDiff] = useState<'easy'|'medium'|'hard'>('medium');
   const [editType, setEditType] = useState<'multiple_choice'|'fill_in_the_blank'|'question_group'>('multiple_choice');  
   const [editSubQuestions, setEditSubQuestions] = useState<SubQuestion[]>([]);
@@ -758,9 +872,11 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
     if (newType === 'multiple_choice' && !options.includes(newAnswer)) return toast('正確答案必須在選項中');
 
     try {
+      const numUnit = Number(newUnit);
+      const finalUnit = !isNaN(numUnit) && String(newUnit).trim() !== '' ? numUnit : (String(newUnit).trim() || 1);
       const data: any = {
         subject: subjectId,
-        unit: newUnit,
+        unit: finalUnit,
         difficulty: newDiff,
         type: newType,
         prompt: newPrompt.replace(/\[SOURCE_IMAGE\]/g, ''),
@@ -811,8 +927,10 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
     if (editType === 'multiple_choice' && !options.includes(editAnswer)) return toast('正確答案必須在選項中');
 
     try {
+      const numEditUnit = Number(editUnit);
+      const finalEditUnit = !isNaN(numEditUnit) && String(editUnit).trim() !== '' ? numEditUnit : (String(editUnit).trim() || 1);
       const data: any = {
-        unit: editUnit,
+        unit: finalEditUnit,
         difficulty: editDiff,
         type: editType,
         prompt: editPrompt.replace(/\[SOURCE_IMAGE\]/g, ''),
@@ -895,7 +1013,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
         <div className="bg-white border border-[#EAE6DF] rounded-xl p-4 mb-4 shadow-sm text-sm">
           <h4 className="font-bold text-[#4A3F35] mb-3 border-b border-[#EAE6DF] pb-2">新增題目</h4>
           <div className="grid grid-cols-3 gap-3 mb-3">
-            <div><label className="text-xs text-[#8C7A6B]">單元</label><input type="number" value={newUnit} onChange={e => setNewUnit(parseInt(e.target.value)||1)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
+            <div><label className="text-xs text-[#8C7A6B]">單元 (數字或任意文字)</label><input type="text" value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="例如: 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
             <div><label className="text-xs text-[#8C7A6B]">難度</label><select value={newDiff} onChange={e => setNewDiff(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="easy">簡單</option><option value="medium">中等</option><option value="hard">困難</option></select></div>
             <div><label className="text-xs text-[#8C7A6B]">題型</label><select value={newType} onChange={e => setNewType(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="multiple_choice">選擇題</option><option value="fill_in_the_blank">填空題</option><option value="question_group">閱讀題組</option></select></div>
           </div>
@@ -934,7 +1052,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 overflow-y-auto max-h-[90vh]">
             <h4 className="font-serif font-bold text-xl text-[#4A3F35] mb-4">編輯題目</h4>
             <div className="grid grid-cols-3 gap-3 mb-3">
-              <div><label className="text-xs text-[#8C7A6B]">單元</label><input type="number" value={editUnit} onChange={e => setEditUnit(parseInt(e.target.value)||1)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
+              <div><label className="text-xs text-[#8C7A6B]">單元 (數字或任意文字)</label><input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} placeholder="例如: 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
               <div><label className="text-xs text-[#8C7A6B]">難度</label><select value={editDiff} onChange={e => setEditDiff(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="easy">簡單</option><option value="medium">中等</option><option value="hard">困難</option></select></div>
               <div><label className="text-xs text-[#8C7A6B]">題型</label><select value={editType} onChange={e => setEditType(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="multiple_choice">選擇題</option><option value="fill_in_the_blank">填空題</option><option value="question_group">閱讀題組</option></select></div>
             </div>
@@ -978,8 +1096,8 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
             />
             <div className="flex-1">
               <div className="flex justify-between items-start mb-2">
-                <div className="flex space-x-2 mb-1">
-                  <span className="bg-[#EAE2D3] text-[#8C7A6B] px-2 py-0.5 rounded text-xs font-bold">U{q.unit}</span>
+                <div className="flex space-x-2 mb-1 flex-wrap gap-y-1">
+                  <span className="bg-[#EAE2D3] text-[#8C7A6B] px-2 py-0.5 rounded text-xs font-bold">{/^\d+$/.test(String(q.unit)) ? `U${q.unit}` : q.unit}</span>
                   <span className="bg-[#FDFBF7] border border-[#D5CFC4] text-[#8C7A6B] px-2 py-0.5 rounded text-xs">{q.difficulty === 'easy' ? '簡單' : q.difficulty === 'medium' ? '中等' : '困難'}</span>
                   {q.type === 'multiple_choice' && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-bold">選擇</span>}
                   {q.type === 'fill_in_the_blank' && <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-bold">填空</span>}
@@ -991,7 +1109,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
                   <button onClick={() => handleDelete(q.id)} className="text-sm text-[#B65D48] hover:text-[#8B4534] font-bold">刪除</button>
                 </div>
               </div>
-              <p className="text-[#4A3F35] font-medium text-lg leading-relaxed">{q.prompt.replace(/\[SOURCE_IMAGE\]/g, '')}</p>
+              <p className="text-[#4A3F35] font-medium text-lg leading-relaxed">{(q.prompt || '').replace(/\[SOURCE_IMAGE\]/g, '')}</p>
               {q.mediaUrl && (
                   <p className="text-xs text-[#8C7A6B] mt-1 break-all">🔗 {q.mediaUrl}</p>
               )}
@@ -1135,8 +1253,18 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
     let cleanedText = text.trim();
     cleanedText = cleanedText.replace(/^```(json)?\\n?/, '').replace(/\\n?```$/, '').trim();
 
+    // 先以正規表達式提取 JSON 陣列或物件區塊
+    const regexMatch = cleanedText.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+    if (regexMatch) {
+      try {
+        data = JSON.parse(regexMatch[0]);
+      } catch (e) {
+        // 容錯解析
+      }
+    }
+
     try {
-      data = JSON.parse(cleanedText);
+      if (!data) data = JSON.parse(cleanedText);
     } catch (e) {
       const startIndexArray = cleanedText.indexOf('[');
       if (startIndexArray !== -1) {
@@ -1195,7 +1323,9 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
         options = options.split(',').map((s: string) => s.trim());
       }
 
-      let itemUnit = item.unit || item['單元'] || item.Unit || 1;
+      let itemUnit = item.unit ?? item['單元'] ?? item.Unit ?? 1;
+      const numUnit = Number(itemUnit);
+      const finalUnit = !isNaN(numUnit) && String(itemUnit).trim() !== '' ? numUnit : (String(itemUnit).trim() || 1);
       let itemDiff = item.difficulty || item['難度'] || item.Difficulty || 'medium';
       let itemType = item.type || item['題型'] || item.Type;
       
@@ -1232,7 +1362,7 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
 
       await addDoc(collection(db, 'questions'), {
         subject: subjectId,
-        unit: parseInt(String(itemUnit)) || 1,
+        unit: finalUnit,
         difficulty: itemDiff,
         type: itemType,
         prompt: String(prompt).replace(/\[SOURCE_IMAGE\]/g, ''),
@@ -2691,6 +2821,16 @@ export function TaskSelect({ user }: { user: UserProfile }) {
                       <span className="text-xs font-bold bg-[#F5F5F0] text-[#8C7A6B] px-2 py-1 rounded">
                         {t.gameMode === 'survival' ? '生存模式' : t.gameMode === 'speed' ? '速答模式' : '一般模式'}
                       </span>
+                      {t.targetUnits && t.targetUnits.length > 0 && (
+                        <span className="text-xs font-bold bg-[#EAE2D3] text-[#4A3F35] px-2 py-1 rounded">
+                          {t.targetUnits.map(u => /^\d+$/.test(String(u)) ? `U${u}` : u).join(', ')}
+                        </span>
+                      )}
+                      {t.filterWeeklyExamWords && (
+                        <span className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                          排除週考詞彙
+                        </span>
+                      )}
                     </div>
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-[#A69B8F]">題數: {t.questionCount} {t.mcCount !== undefined ? `(選擇 ${t.mcCount}, 填空 ${t.fibCount})` : ""}</span>
@@ -2817,8 +2957,17 @@ export function Gameplay({ user }: { user: UserProfile }) {
         
         // Filter by target units
         if (taskData.targetUnits && taskData.targetUnits.length > 0) {
-          allQs = allQs.filter(q => taskData.targetUnits.includes(q.unit));
+          allQs = allQs.filter(q => 
+            taskData.targetUnits.some(u => String(u).trim().toLowerCase() === String(q.unit).trim().toLowerCase())
+          );
         }
+
+        // Filter by weekly exam words if enabled in task
+        if (taskData.filterWeeklyExamWords) {
+          const weeklyWordsSet = getWeeklyExamWordsSet(allQs);
+          allQs = allQs.filter(q => !isQuestionMatchingWeeklyExamWords(q, weeklyWordsSet));
+        }
+
         // Filter by difficulty if not mixed
         if (taskData.difficulty !== 'mixed') {
           allQs = allQs.filter(q => q.difficulty === taskData.difficulty);
