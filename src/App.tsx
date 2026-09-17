@@ -131,8 +131,23 @@ export interface SubjectConfig {
 
 import { app, auth, db, storage, googleProvider } from './firebase';
 
-
-
+/**
+ * 徹底清理將寫入 Firestore 的物件，移除所有 undefined 屬性，防止 Firestore 拋出
+ * "Unsupported field value: undefined" 例外。
+ */
+export function cleanFirestoreData<T extends Record<string, any>>(obj: T): Partial<T> {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[key] = cleanFirestoreData(value);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
 
 export function AdminDashboard() {
   const navigate = useNavigate();
@@ -887,7 +902,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
       };
       if (newType === 'multiple_choice') data.options = options;
       if (newType === 'question_group') data.subQuestions = newSubQuestions.map((sq: any) => ({...sq, prompt: sq.prompt.replace(/\[SOURCE_IMAGE\]/g, '')}));
-      await addDoc(collection(db, 'questions'), data);
+      await addDoc(collection(db, 'questions'), cleanFirestoreData(data));
       setShowAddForm(false);
       setNewPrompt(''); setNewAnswer(''); setNewOptions(''); setNewMediaUrl(''); setNewExplanation(''); setNewSubQuestions([]);
       onRefresh();
@@ -945,7 +960,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
       if (editType === 'question_group') data.subQuestions = editSubQuestions.map((sq: any) => ({...sq, prompt: sq.prompt.replace(/\[SOURCE_IMAGE\]/g, '')}));
       else data.subQuestions = null;
       
-      await updateDoc(doc(db, 'questions', editingId), data);
+      await updateDoc(doc(db, 'questions', editingId), cleanFirestoreData(data));
       setEditingId(null);
       onRefresh();
     } catch(e) { console.error(e); }
@@ -1190,7 +1205,7 @@ export function AIGeneratorTab({ subjectId, onRefresh }: { subjectId: Subject, o
 
   const handleSave = async () => {
     for (const q of generated) {
-      await addDoc(collection(db, 'questions'), {
+      await addDoc(collection(db, 'questions'), cleanFirestoreData({
         ...q,
         prompt: q.prompt ? q.prompt.replace(/\[SOURCE_IMAGE\]/g, '') : '',
         subject: subjectId,
@@ -1198,7 +1213,7 @@ export function AIGeneratorTab({ subjectId, onRefresh }: { subjectId: Subject, o
         difficulty: q.difficulty || 'medium',
         type: q.type || (type === 'mixed' ? 'multiple_choice' : type),
         createdAt: Date.now()
-      });
+      }));
     }
     toast('已儲存至題庫');
     setGenerated([]);
@@ -1356,25 +1371,27 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
       }
 
       let mediaUrl = item.mediaUrl || item['多媒體連結'] || null;
-      let mediaType = item.mediaType || item['多媒體類型'] || (mediaUrl ? 'image' : undefined);
+      let mediaType = item.mediaType || item['多媒體類型'] || (mediaUrl ? 'image' : null);
       let explanation = item.explanation || item['詳解'] || null;
       let subQuestions = item.subQuestions || item['子問題'] || null;
 
-      await addDoc(collection(db, 'questions'), {
+      const questionPayload = cleanFirestoreData({
         subject: subjectId,
         unit: finalUnit,
         difficulty: itemDiff,
         type: itemType,
         prompt: String(prompt).replace(/\[SOURCE_IMAGE\]/g, ''),
-        options: options,
+        options: options ?? null,
         correctAnswer: String(correctAnswer),
-        clue: clue,
-        mediaUrl,
-        mediaType,
-        explanation,
-        subQuestions,
+        clue: clue ?? null,
+        mediaUrl: mediaUrl ?? null,
+        mediaType: mediaType ?? null,
+        explanation: explanation ?? null,
+        subQuestions: subQuestions ?? null,
         createdAt: Date.now()
-      } as Omit<Question, 'id'>);
+      });
+
+      await addDoc(collection(db, 'questions'), questionPayload);
       count++;
     }
     return count;
@@ -1385,12 +1402,13 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
     setIsImporting(true);
     try {
       for (const item of previewData) {
-        await addDoc(collection(db, 'questions'), {
+        const previewPayload = cleanFirestoreData({
           ...item,
           prompt: item.prompt ? item.prompt.replace(/\[SOURCE_IMAGE\]/g, '') : '',
           subject: subjectId,
           createdAt: Date.now()
         });
+        await addDoc(collection(db, 'questions'), previewPayload);
       }
       toast(`成功匯入 ${previewData.length} 題！`);
       setPreviewData([]);
