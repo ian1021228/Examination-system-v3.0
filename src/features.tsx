@@ -11,6 +11,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGri
 import { toast } from './toast';
 import { googleSignIn, getAccessToken } from './auth';
 import { confirmModal } from './confirm';
+import { CourseMaterialImportModal, CourseMaterialSkillModal } from './CourseMaterialImport';
 
 export interface Announcement {
   id?: string;
@@ -43,21 +44,61 @@ export interface CourseMaterial {
   id?: string;
   subjectId: string;
   unit: number | string;
-  type: 'video' | 'pdf' | 'article' | 'lesson';
+  type: 'video' | 'pdf' | 'article' | 'lesson' | 'exam' | 'solution';
   title: string;
   contentUrl: string;
   description: string;
   markdownNotes?: string;
   attachments?: { name: string; url: string }[];
   createdAt: number;
+  sortOrder?: number;
   requiredMaterialIds?: string[];
 }
 
 export const compareUnits = (u1: any, u2: any) => {
-  const n1 = Number(u1);
-  const n2 = Number(u2);
-  if (!isNaN(n1) && !isNaN(n2)) return n1 - n2;
-  return String(u1 ?? '').localeCompare(String(u2 ?? ''), 'zh-Hant');
+  const s1 = String(u1 ?? '').trim();
+  const s2 = String(u2 ?? '').trim();
+  const n1 = Number(s1);
+  const n2 = Number(s2);
+  if (!isNaN(n1) && !isNaN(n2) && s1 !== '' && s2 !== '') return n1 - n2;
+  if (!isNaN(n1) && s1 !== '' && isNaN(n2)) return -1;
+  if (isNaN(n1) && !isNaN(n2) && s2 !== '') return 1;
+  return s1.localeCompare(s2, 'zh-Hant', { numeric: true, sensitivity: 'base' });
+};
+
+export const formatUnitName = (u: any): string => {
+  if (u === undefined || u === null) return 'Unit 1';
+  const str = String(u).trim();
+  if (!str) return 'Unit 1';
+  if (/^unit\b/i.test(str) || str.startsWith('單元') || /^第.+[單元課章節]/i.test(str)) {
+    return str;
+  }
+  if (/^(\d+|[A-Za-z]{1,3}|\d+[A-Za-z]|[A-Za-z]\d+)$/.test(str)) {
+    return `Unit ${str.toUpperCase()}`;
+  }
+  return str;
+};
+
+export const formatUnitBadge = (u: any): string => {
+  if (u === undefined || u === null) return 'U1';
+  const str = String(u).trim();
+  if (!str) return 'U1';
+  if (/^u\d+$/i.test(str)) return str.toUpperCase();
+  if (/^unit\s*([A-Za-z0-9]+)$/i.test(str)) {
+    const match = str.match(/^unit\s*([A-Za-z0-9]+)$/i);
+    return `U${match![1].toUpperCase()}`;
+  }
+  if (/^\d+$/.test(str)) return `U${str}`;
+  if (/^[A-Za-z]{1,2}$/.test(str)) return `U${str.toUpperCase()}`;
+  return str;
+};
+
+export const formatUnitDisplay = (u: any): string => {
+  const s = String(u ?? '').trim();
+  if (!s) return '';
+  if (/^unit\b/i.test(s) || s.startsWith('單元') || s.startsWith('第')) return s;
+  if (/^(\d+|[A-Za-z]{1,2})$/.test(s)) return `單元 ${s.toUpperCase()}`;
+  return s;
 };
 
 export interface DiscussionMsg {
@@ -318,6 +359,8 @@ export function AnnouncementsAdminTab() {
 export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showSkillModal, setShowSkillModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newMat, setNewMat] = useState<Partial<CourseMaterial>>({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -488,7 +531,7 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
           <h2 className="font-bold text-2xl text-gray-900">課程教材管理</h2>
           <p className="text-sm text-gray-500 mt-1">在這裡您可以管理教材順序，並查看學生學習歷程。</p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0">
           <button 
             onClick={() => setViewMode(viewMode === 'materials' ? 'progress' : 'materials')} 
             className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${
@@ -500,17 +543,33 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
             {viewMode === 'materials' ? '📊 查看學生學習進度' : '✏️ 返回教材編輯'}
           </button>
           {viewMode === 'materials' && (
-            <button onClick={() => {
-              if (showForm) {
-                setShowForm(false);
-                setEditingId(null);
-                setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
-              } else {
-                setShowForm(true);
-              }
-            }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-2 text-sm font-bold shadow-sm transition-all">
-              {showForm ? '取消' : <><Upload size={18}/> 新增教材</>}
-            </button>
+            <>
+              <button
+                onClick={() => setShowSkillModal(true)}
+                className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-sm font-bold shadow-sm transition-all"
+                title="查看教材格式規範與提示詞範本"
+              >
+                <FileText size={16} className="text-indigo-600" /> 教材格式 (skill.txt)
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-sm font-bold shadow-sm transition-all"
+                title="批次匯入教材 JSON"
+              >
+                <Download size={16} className="rotate-180" /> 批次匯入
+              </button>
+              <button onClick={() => {
+                if (showForm) {
+                  setShowForm(false);
+                  setEditingId(null);
+                  setNewMat({ type: 'lesson', unit: 1, title: '', contentUrl: '', description: '', markdownNotes: '', attachments: [] });
+                } else {
+                  setShowForm(true);
+                }
+              }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 flex items-center gap-1.5 text-sm font-bold shadow-sm transition-all">
+                {showForm ? '取消' : <><Upload size={16}/> 新增教材</>}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -523,15 +582,17 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                 <div className="md:col-span-3">
                   <label className="text-sm font-bold text-gray-700">類型</label>
                   <select value={newMat.type} onChange={e => setNewMat({...newMat, type: e.target.value as any})} className="w-full border border-gray-200 rounded-xl p-3 bg-white mt-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="lesson">課程講義</option>
-                    <option value="exam">考卷</option>
-                    <option value="solution">考卷解答</option>
-                    <option value="video">影音</option>
+                    <option value="lesson">📖 課程講義</option>
+                    <option value="video">📹 影音教學</option>
+                    <option value="exam">📝 考卷</option>
+                    <option value="solution">🔑 考卷解答</option>
+                    <option value="article">📰 延伸文章</option>
+                    <option value="pdf">📄 PDF 文件</option>
                   </select>
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-sm font-bold text-gray-700">單元</label>
-                  <input type="text" value={newMat.unit ?? ''} onChange={e => setNewMat({...newMat, unit: e.target.value})} placeholder="例如: 1 或 第一課" className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                  <input type="text" value={newMat.unit ?? ''} onChange={e => setNewMat({...newMat, unit: e.target.value})} placeholder="例如: A, B, 1 或 第一課" className="w-full border border-gray-200 rounded-xl p-3 mt-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
                 </div>
                 <div className="md:col-span-7">
                   <label className="text-sm font-bold text-gray-700">標題</label>
@@ -590,7 +651,7 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
           <div className="space-y-4">
             {Object.entries(groupedMaterials).map(([unit, mats]) => (
               <div key={unit} className="mb-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">{/^\d+$/.test(unit) ? `Unit ${unit}` : unit}</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-4 border-b pb-2">{formatUnitName(unit)}</h3>
                 <div className="space-y-3">
                   {mats.map(m => {
                     const isBeingDragged = draggedId === m.id;
@@ -620,7 +681,7 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                           <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-gray-900 truncate">{m.title}</h4>
                             <span className="text-xs text-gray-500 uppercase tracking-wide">
-                              {m.type === 'video' ? '📹 影音' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type}
+                              {m.type === 'video' ? '📹 影音教學' : m.type === 'lesson' ? '📖 課程講義' : m.type === 'exam' ? '📝 考卷' : m.type === 'solution' ? '🔑 解答' : m.type === 'article' ? '📰 延伸文章' : m.type === 'pdf' ? '📄 PDF 文件' : m.type}
                             </span>
                           </div>
                         </div>
@@ -634,6 +695,37 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
                 </div>
               </div>
             ))}
+            {materials.length === 0 && !showForm && (
+              <div className="text-center py-16 px-6 bg-gray-50/70 border-2 border-dashed border-gray-200 rounded-3xl">
+                <div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <BookOpen size={28} />
+                </div>
+                <h3 className="text-base font-bold text-gray-800">目前尚無任何課程教材</h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                  您可以點擊「批次匯入」上傳 JSON，或參考「教材格式 (skill.txt)」讓 AI 快速產生課程講義與影音教材！
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3 mt-5">
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <Download size={14} className="rotate-180" /> 批次匯入教材
+                  </button>
+                  <button
+                    onClick={() => setShowSkillModal(true)}
+                    className="bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <FileText size={14} className="text-indigo-600" /> 查看格式 (skill.txt)
+                  </button>
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow-sm transition-all"
+                  >
+                    <Plus size={14} /> 手動新增教材
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -923,6 +1015,19 @@ export function CourseMaterialsAdminTab({ subjectId }: { subjectId: string }) {
           )}
         </div>
       )}
+
+      <CourseMaterialImportModal
+        subjectId={subjectId}
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => fetchMaterials()}
+        onOpenSkill={() => setShowSkillModal(true)}
+        materialsCount={materials.length}
+      />
+      <CourseMaterialSkillModal
+        isOpen={showSkillModal}
+        onClose={() => setShowSkillModal(false)}
+      />
     </div>
   );
 }
@@ -1547,7 +1652,7 @@ export function CourseMaterialsStudentView({ subjectId, user }: { subjectId: str
         
         {Object.entries(groupedMaterials).map(([unit, mats]) => (
           <div key={unit} className="mb-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">{/^\d+$/.test(unit) ? `Unit ${unit}` : unit}</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-3 border-b pb-2">{formatUnitName(unit)}</h3>
             <div className="space-y-3">
               {mats.map(m => {
                 const isCompleted = progressData[m.id!]?.completed || false;

@@ -12,7 +12,7 @@ import { pinyin } from 'pinyin-pro';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import html2pdf from 'html2pdf.js';
 import { ParticleEngine } from './ParticleEngine';
-import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile, Leaderboard, XPShop, StudyTimer, LearningAnalyticsDashboard } from './features';
+import { LandingPage, AnnouncementsAdminTab, CourseMaterialsAdminTab, DiscussionBoard, CourseMaterialsStudentView, GamificationProfile, Leaderboard, XPShop, StudyTimer, LearningAnalyticsDashboard, compareUnits, formatUnitDisplay, formatUnitBadge } from './features';
 import { PetExamDateSelector, PetExamRunner, PetAdminPanel } from './PetExamView';
 import { isAnswerCorrect, getWeeklyExamWordsSet, isQuestionMatchingWeeklyExamWords } from './petExam';
 
@@ -354,12 +354,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
         set.add(String(i));
       }
     }
-    return Array.from(set).sort((a, b) => {
-      const na = Number(a);
-      const nb = Number(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return a.localeCompare(b, 'zh-Hant');
-    });
+    return Array.from(set).sort(compareUnits);
   }, [questions, units, config.totalUnits]);
 
   // 基礎題庫篩選核心（單元 + 週考單字過濾）
@@ -562,7 +557,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                     onClick={() => toggleUnit(u)}
                     className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${isSelected ? 'bg-[#4A3F35] text-white shadow-sm' : 'bg-[#EAE2D3] text-[#8C7A6B] hover:bg-[#D5CFC4]'}`}
                   >
-                    {/^\d+$/.test(u) ? `單元 ${u}` : u}
+                    {formatUnitDisplay(u)}
                   </button>
                 );
               })}
@@ -574,7 +569,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                   value={customUnitInput}
                   onChange={e => setCustomUnitInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomUnit(); } }}
-                  placeholder="+ 新增自訂單元..."
+                  placeholder="+ 自訂單元 (如 A, B, 1)..."
                   className="text-xs bg-[#FDFBF7] border border-[#D5CFC4] rounded-full px-3 py-1 text-[#4A3F35] focus:outline-none focus:ring-1 focus:ring-[#C2A878] w-32"
                 />
                 {customUnitInput.trim() && (
@@ -661,7 +656,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                     }} className="mt-1 accent-[#C2A878]" />
                     <div className="flex-1 text-sm text-[#4A3F35]">
                       <div className="flex items-center space-x-2 mb-1 flex-wrap gap-y-1">
-                        <span className="bg-[#EAE2D3] text-[#8C7A6B] px-1.5 py-0.5 rounded text-[10px] font-bold">{/^\d+$/.test(String(q.unit)) ? `U${q.unit}` : q.unit}</span>
+                        <span className="bg-[#EAE2D3] text-[#8C7A6B] px-1.5 py-0.5 rounded text-[10px] font-bold">{formatUnitBadge(q.unit)}</span>
                         {q.type === 'multiple_choice' && !q.mediaUrl && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">選擇</span>}
                         {q.type === 'fill_in_the_blank' && !q.mediaUrl && <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-[10px] font-bold">填空</span>}
                         {q.type === 'question_group' && !q.mediaUrl && <span className="bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded text-[10px] font-bold">題組</span>}
@@ -723,7 +718,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
               <p>模式: {t.gameMode === 'survival' ? '生存' : t.gameMode === 'speed' ? '速答' : '一般'}</p>
               <p>總題數: {t.questionCount} {t.selectionMode === 'manual' ? '(手動選題)' : `(選擇 ${t.mcCount||0}, 填空 ${t.fibCount||0}, 題組 ${t.qgCount||0}, 多媒體 ${t.mmCount||0})`}</p>
               <p>難度: {t.difficulty === 'mixed' ? '混合' : t.difficulty === 'easy' ? '簡單' : t.difficulty === 'medium' ? '中等' : '困難'}</p>
-              <p>範圍: {t.targetUnits?.length ? t.targetUnits.map(u => /^\d+$/.test(String(u)) ? `單元 ${u}` : u).join(', ') : '全部單元'}</p>
+              <p>範圍: {t.targetUnits?.length ? t.targetUnits.map(u => formatUnitDisplay(u)).join(', ') : '全部單元'}</p>
               {t.filterWeeklyExamWords && <p className="text-amber-700 font-semibold text-xs">✨ 已排除週考單字</p>}
               <p>愛心: {t.maxHearts ? t.maxHearts : '無限'}</p>
             </div>
@@ -1028,7 +1023,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
         <div className="bg-white border border-[#EAE6DF] rounded-xl p-4 mb-4 shadow-sm text-sm">
           <h4 className="font-bold text-[#4A3F35] mb-3 border-b border-[#EAE6DF] pb-2">新增題目</h4>
           <div className="grid grid-cols-3 gap-3 mb-3">
-            <div><label className="text-xs text-[#8C7A6B]">單元 (數字或任意文字)</label><input type="text" value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="例如: 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
+            <div><label className="text-xs text-[#8C7A6B]">單元 (英文字母、數字或文字)</label><input type="text" value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="例如: A, B, 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
             <div><label className="text-xs text-[#8C7A6B]">難度</label><select value={newDiff} onChange={e => setNewDiff(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="easy">簡單</option><option value="medium">中等</option><option value="hard">困難</option></select></div>
             <div><label className="text-xs text-[#8C7A6B]">題型</label><select value={newType} onChange={e => setNewType(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="multiple_choice">選擇題</option><option value="fill_in_the_blank">填空題</option><option value="question_group">閱讀題組</option></select></div>
           </div>
@@ -1067,7 +1062,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 overflow-y-auto max-h-[90vh]">
             <h4 className="font-serif font-bold text-xl text-[#4A3F35] mb-4">編輯題目</h4>
             <div className="grid grid-cols-3 gap-3 mb-3">
-              <div><label className="text-xs text-[#8C7A6B]">單元 (數字或任意文字)</label><input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} placeholder="例如: 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
+              <div><label className="text-xs text-[#8C7A6B]">單元 (英文字母、數字或文字)</label><input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} placeholder="例如: A, B, 1, 第一單元" className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]" /></div>
               <div><label className="text-xs text-[#8C7A6B]">難度</label><select value={editDiff} onChange={e => setEditDiff(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="easy">簡單</option><option value="medium">中等</option><option value="hard">困難</option></select></div>
               <div><label className="text-xs text-[#8C7A6B]">題型</label><select value={editType} onChange={e => setEditType(e.target.value as any)} className="w-full bg-[#FDFBF7] border border-[#D5CFC4] rounded px-3 py-2 text-[#4A3F35]"><option value="multiple_choice">選擇題</option><option value="fill_in_the_blank">填空題</option><option value="question_group">閱讀題組</option></select></div>
             </div>
@@ -1112,7 +1107,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
             <div className="flex-1">
               <div className="flex justify-between items-start mb-2">
                 <div className="flex space-x-2 mb-1 flex-wrap gap-y-1">
-                  <span className="bg-[#EAE2D3] text-[#8C7A6B] px-2 py-0.5 rounded text-xs font-bold">{/^\d+$/.test(String(q.unit)) ? `U${q.unit}` : q.unit}</span>
+                  <span className="bg-[#EAE2D3] text-[#8C7A6B] px-2 py-0.5 rounded text-xs font-bold">{formatUnitBadge(q.unit)}</span>
                   <span className="bg-[#FDFBF7] border border-[#D5CFC4] text-[#8C7A6B] px-2 py-0.5 rounded text-xs">{q.difficulty === 'easy' ? '簡單' : q.difficulty === 'medium' ? '中等' : '困難'}</span>
                   {q.type === 'multiple_choice' && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-bold">選擇</span>}
                   {q.type === 'fill_in_the_blank' && <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-bold">填空</span>}
@@ -2841,7 +2836,7 @@ export function TaskSelect({ user }: { user: UserProfile }) {
                       </span>
                       {t.targetUnits && t.targetUnits.length > 0 && (
                         <span className="text-xs font-bold bg-[#EAE2D3] text-[#4A3F35] px-2 py-1 rounded">
-                          {t.targetUnits.map(u => /^\d+$/.test(String(u)) ? `U${u}` : u).join(', ')}
+                          {t.targetUnits.map(u => formatUnitBadge(u)).join(', ')}
                         </span>
                       )}
                       {t.filterWeeklyExamWords && (
