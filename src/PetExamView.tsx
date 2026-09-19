@@ -454,7 +454,7 @@ export function PetExamRunner({ user }: { user: any }) {
         // 重構試卷
         const p1a: any[] = [];
         const p1b: any[] = [];
-        const p2aMap: Record<number, any> = {};
+        const p2aRawItems: any[] = [];
         const p2b: any[] = [];
 
         qSnap.docs.forEach(d => {
@@ -476,77 +476,7 @@ export function PetExamRunner({ user }: { user: any }) {
               clue: q.clue
             });
           } else if (q.part === 'part2_a') {
-            const zhMatch = q.prompt ? q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/) : null;
-            const subMatch = q.prompt ? q.prompt.match(/主詞:\s*([^[]+)/) : null;
-            const fallbackZh = q.clue ? (q.clue.match(/動詞[：:]\s*([^，,\s]+)/)?.[1] || q.clue) : '';
-            const verbChinese = zhMatch ? zhMatch[1] : (fallbackZh || '動詞');
-            const subject = subMatch ? subMatch[1].trim() : '-';
-
-            // 判斷時態
-            let tense = q.verbTense;
-            if (!tense) {
-              const pStr = String(q.prompt || '');
-              if (/present|現在|原形/i.test(pStr)) tense = 'present';
-              else if (/past simple|過去式/i.test(pStr)) tense = 'past';
-              else if (/participle|過去分詞|分詞|完成/i.test(pStr)) tense = 'participle';
-              else if (q.itemNumber) {
-                const mod = ((q.itemNumber - 1) % 3);
-                tense = mod === 0 ? 'present' : mod === 1 ? 'past' : 'participle';
-              } else {
-                tense = 'present';
-              }
-            }
-
-            // 推算所屬動詞組別 rowId (1~5)
-            let rowId: number;
-            // 優先搜尋是否已有相同動詞中文與主詞的列（避免分散成 15 行）
-            const existingRow = Object.values(p2aMap).find(
-              (r: any) => r.verbChinese === verbChinese && (r.subject === subject || subject === '-' || r.subject === '-')
-            ) as any;
-
-            if (existingRow) {
-              rowId = existingRow.id;
-            } else if (q.verbRowId && q.verbRowId >= 1 && q.verbRowId <= 5) {
-              rowId = q.verbRowId;
-            } else if (q.itemNumber && q.itemNumber >= 1 && q.itemNumber <= 15) {
-              rowId = Math.ceil(q.itemNumber / 3);
-            } else {
-              rowId = Object.keys(p2aMap).length + 1;
-            }
-
-            if (!p2aMap[rowId]) {
-              p2aMap[rowId] = {
-                id: rowId,
-                verbChinese: verbChinese,
-                subject: subject,
-                presentSimple: '',
-                pastSimple: '',
-                participle: '',
-                acceptableAnswers: {}
-              };
-            } else {
-              if (p2aMap[rowId].verbChinese === '動詞' && verbChinese !== '動詞') {
-                p2aMap[rowId].verbChinese = verbChinese;
-              }
-              if (p2aMap[rowId].subject === '-' && subject !== '-') {
-                p2aMap[rowId].subject = subject;
-              }
-            }
-
-            if (tense === 'present') {
-              p2aMap[rowId].presentSimple = q.correctAnswer;
-              p2aMap[rowId].acceptableAnswers.presentSimple = q.acceptableAnswers || [q.correctAnswer];
-            } else if (tense === 'past') {
-              p2aMap[rowId].pastSimple = q.correctAnswer;
-              p2aMap[rowId].acceptableAnswers.pastSimple = q.acceptableAnswers || [q.correctAnswer];
-            } else if (tense === 'participle') {
-              const cleanParticiple = String(q.correctAnswer || '').replace(/^(?:have|has)\s+/i, '').trim();
-              p2aMap[rowId].participle = cleanParticiple;
-              const cleanAcceptable = (q.acceptableAnswers || [cleanParticiple])
-                .map((a: string) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
-                .filter((a: string) => a.length > 0);
-              p2aMap[rowId].acceptableAnswers.participle = cleanAcceptable.length > 0 ? cleanAcceptable : [cleanParticiple];
-            }
+            p2aRawItems.push(q);
           } else if (q.part === 'part2_b') {
             p2b.push({
               id: q.itemNumber || p2b.length + 1,
@@ -558,10 +488,92 @@ export function PetExamRunner({ user }: { user: any }) {
           }
         });
 
+        // 依動詞中文與主詞分群重構 Part II Sec A (5 組動詞表格，徹底杜絕錯位與空白)
+        const groupsMap = new Map<string, {
+          verbChinese: string;
+          subject: string;
+          minItemNumber: number;
+          items: { q: any; tense: string }[];
+        }>();
+
+        p2aRawItems.forEach(q => {
+          const zhMatch = q.prompt ? q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/) : null;
+          const subMatch = q.prompt ? q.prompt.match(/主詞:\s*([^[]+)/) : null;
+          const fallbackZh = q.clue ? (q.clue.match(/動詞[：:]\s*([^，,\s]+)/)?.[1] || q.clue) : '';
+          const verbChinese = zhMatch ? zhMatch[1] : (fallbackZh || '動詞');
+          const subject = subMatch ? subMatch[1].trim() : (q.subject && q.subject !== 'pet' ? q.subject : '-');
+
+          let tense = q.verbTense;
+          if (!tense) {
+            const pStr = String(q.prompt || '');
+            if (/present|現在|原形/i.test(pStr)) tense = 'present';
+            else if (/past simple|過去式/i.test(pStr)) tense = 'past';
+            else if (/participle|過去分詞|分詞|完成/i.test(pStr)) tense = 'participle';
+            else if (q.itemNumber) {
+              const mod = ((q.itemNumber - 1) % 3);
+              tense = mod === 0 ? 'present' : mod === 1 ? 'past' : 'participle';
+            } else {
+              tense = 'present';
+            }
+          }
+
+          const itemNo = q.itemNumber || 999;
+          const key = `${verbChinese}_${subject}`;
+          if (!groupsMap.has(key)) {
+            groupsMap.set(key, {
+              verbChinese,
+              subject,
+              minItemNumber: itemNo,
+              items: []
+            });
+          }
+          const grp = groupsMap.get(key)!;
+          grp.items.push({ q, tense });
+          if (itemNo < grp.minItemNumber) {
+            grp.minItemNumber = itemNo;
+          }
+        });
+
+        const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => a.minItemNumber - b.minItemNumber);
+
+        const p2aList = sortedGroups.map((grp, idx) => {
+          const rowId = idx + 1;
+          let presentSimple = '';
+          let pastSimple = '';
+          let participle = '';
+          const acceptableAnswers: Record<string, string[]> = {};
+
+          for (const { q, tense } of grp.items) {
+            if (tense === 'present') {
+              presentSimple = q.correctAnswer;
+              acceptableAnswers.presentSimple = q.acceptableAnswers || [q.correctAnswer];
+            } else if (tense === 'past') {
+              pastSimple = q.correctAnswer;
+              acceptableAnswers.pastSimple = q.acceptableAnswers || [q.correctAnswer];
+            } else if (tense === 'participle') {
+              const cleanParticiple = String(q.correctAnswer || '').replace(/^(?:have|has)\s+/i, '').trim();
+              participle = cleanParticiple;
+              const cleanAcceptable = (q.acceptableAnswers || [cleanParticiple])
+                .map((a: string) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
+                .filter((a: string) => a.length > 0);
+              acceptableAnswers.participle = cleanAcceptable.length > 0 ? cleanAcceptable : [cleanParticiple];
+            }
+          }
+
+          return {
+            id: rowId,
+            verbChinese: grp.verbChinese,
+            subject: grp.subject,
+            presentSimple,
+            pastSimple,
+            participle,
+            acceptableAnswers
+          };
+        });
+
         p1a.sort((a, b) => a.id - b.id);
         p1b.sort((a, b) => a.id - b.id);
         p2b.sort((a, b) => a.id - b.id);
-        const p2aList = Object.values(p2aMap).sort((a, b) => a.id - b.id);
 
         const dateMeta = PET_EXAM_DATES.find(d => d.id === dateId);
 
@@ -1362,9 +1374,8 @@ export function PetExamRunner({ user }: { user: any }) {
               </p>
               <div className="mt-2.5 inline-flex items-center gap-2 bg-[#EAE2D3]/70 border border-[#D5CFC4] text-[#4A3F35] text-xs font-bold px-3 py-1.5 rounded-lg">
                 <span className="w-2 h-2 rounded-full bg-[#72816B]"></span>
-                <span>主詞設定 / Subject：</span>
-                <span className="bg-[#4A3F35] text-white px-2 py-0.5 rounded font-black tracking-wide text-xs">He</span>
-                <span className="text-[#8C7A6B] font-normal">（如需考慮人稱變化時，此處主詞一律為 He）</span>
+                <span>主詞提示 / Subject：</span>
+                <span className="text-[#4A3F35] font-semibold">請依照各題目指定的主詞（如 He, It, They, We, She 等）填入對應的動詞變化</span>
               </div>
             </div>
 

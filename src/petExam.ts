@@ -339,6 +339,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
     // Present Simple
     result.push({
       subject: 'pet',
+      targetSubject: item.subject || '-',
       examDate: itemDate,
       date: itemDate,
       part: 'part2_a',
@@ -348,9 +349,9 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Present Simple 原形/現在式]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese})${item.subject && item.subject !== '-' ? ` - 主詞: ${item.subject}` : ''} [Present Simple 原形/現在式]`,
       correctAnswer: item.presentSimple,
-      clue: `動詞：${item.verbChinese}，原形 (Base Form)`,
+      clue: `動詞：${item.verbChinese}，原形 (Base Form)${item.subject && item.subject !== '-' ? `，主詞：${item.subject}` : ''}`,
       explanation: `【動詞三態時態填空】${item.verbChinese} 之原形 (Base Form) 為「${item.presentSimple}」`,
       acceptableAnswers: item.acceptableAnswers?.presentSimple || [],
       createdAt: Date.now()
@@ -359,6 +360,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
     // Past Simple
     result.push({
       subject: 'pet',
+      targetSubject: item.subject || '-',
       examDate: itemDate,
       date: itemDate,
       part: 'part2_a',
@@ -368,9 +370,9 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Past Simple 過去式]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese})${item.subject && item.subject !== '-' ? ` - 主詞: ${item.subject}` : ''} [Past Simple 過去式]`,
       correctAnswer: item.pastSimple,
-      clue: `動詞：${item.verbChinese}，過去式 (Past Simple)`,
+      clue: `動詞：${item.verbChinese}，過去式 (Past Simple)${item.subject && item.subject !== '-' ? `，主詞：${item.subject}` : ''}`,
       explanation: `【動詞三態時態填空】${item.verbChinese} 之過去式 (Past Simple) 為「${item.pastSimple}」`,
       acceptableAnswers: item.acceptableAnswers?.pastSimple || [],
       createdAt: Date.now()
@@ -384,6 +386,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
 
     result.push({
       subject: 'pet',
+      targetSubject: item.subject || '-',
       examDate: itemDate,
       date: itemDate,
       part: 'part2_a',
@@ -393,9 +396,9 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       unit: 2,
       difficulty: 'medium',
       type: 'fill_in_the_blank',
-      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Participle 過去分詞]`,
+      prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese})${item.subject && item.subject !== '-' ? ` - 主詞: ${item.subject}` : ''} [Participle 過去分詞]`,
       correctAnswer: cleanParticiple,
-      clue: `動詞：${item.verbChinese}，過去分詞 (Participle)`,
+      clue: `動詞：${item.verbChinese}，過去分詞 (Participle)${item.subject && item.subject !== '-' ? `，主詞：${item.subject}` : ''}`,
       explanation: `【動詞三態時態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${cleanParticiple}」`,
       acceptableAnswers: cleanAcceptablePart.length > 0 ? cleanAcceptablePart : [cleanParticiple],
       createdAt: Date.now()
