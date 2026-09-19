@@ -6,7 +6,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, updateDoc , limit, onSnapshot, orderBy } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { Calendar, Heart, Settings, BookOpen, User, RotateCcw, Home, Plus, X, Lock, Play, CheckCircle, List, Upload, Gamepad, LayoutDashboard, LogOut, Printer, Sparkles } from 'lucide-react';
+import { Calendar, Heart, Settings, BookOpen, User, RotateCcw, Home, Plus, X, Lock, Play, CheckCircle, List, Upload, Gamepad, LayoutDashboard, LogOut, Printer, Sparkles, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { pinyin } from 'pinyin-pro';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -149,6 +149,87 @@ export function cleanFirestoreData<T extends Record<string, any>>(obj: T): Parti
   return result;
 }
 
+/**
+ * 匯出題庫為標準 JSON 格式檔案
+ */
+export function exportQuestionsToJSON(
+  questionsToExport: Question[],
+  subjectId?: Subject,
+  customSuffix?: string
+) {
+  if (!questionsToExport || questionsToExport.length === 0) {
+    toast('目前沒有可匯出的題目');
+    return;
+  }
+
+  const cleanList = questionsToExport.map(q => {
+    const item: Record<string, any> = {
+      prompt: q.prompt || '',
+      correctAnswer: q.correctAnswer || '',
+      unit: q.unit,
+      difficulty: q.difficulty || 'medium',
+      type: q.type || 'multiple_choice',
+    };
+
+    if (q.options && Array.isArray(q.options) && q.options.length > 0) {
+      item.options = q.options;
+    }
+    if (q.explanation) {
+      item.explanation = q.explanation;
+    }
+    if (q.clue) {
+      item.clue = q.clue;
+    }
+    if (q.mediaUrl) {
+      item.mediaUrl = q.mediaUrl;
+      item.mediaType = q.mediaType || 'image';
+    }
+    if (q.subQuestions && Array.isArray(q.subQuestions) && q.subQuestions.length > 0) {
+      item.subQuestions = q.subQuestions.map(sq => {
+        const sub: Record<string, any> = {
+          id: sq.id,
+          type: sq.type || 'multiple_choice',
+          prompt: sq.prompt || '',
+          correctAnswer: sq.correctAnswer || ''
+        };
+        if (sq.options && Array.isArray(sq.options) && sq.options.length > 0) {
+          sub.options = sq.options;
+        }
+        if (sq.explanation) {
+          sub.explanation = sq.explanation;
+        }
+        return sub;
+      });
+    }
+
+    if (q.examDate) item.examDate = q.examDate;
+    if (q.part) item.part = q.part;
+    if (q.verbTense) item.verbTense = q.verbTense;
+    if (q.itemNumber !== undefined) item.itemNumber = q.itemNumber;
+    if (q.acceptableAnswers && q.acceptableAnswers.length > 0) {
+      item.acceptableAnswers = q.acceptableAnswers;
+    }
+
+    return item;
+  });
+
+  const jsonString = JSON.stringify(cleanList, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const subjectName = subjectId ? (SUBJECT_LABELS[subjectId] || subjectId) : '題庫';
+  const suffix = customSuffix ? `_${customSuffix}` : '';
+  a.href = url;
+  a.download = `${subjectName}_題庫${suffix}_${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`成功匯出 ${cleanList.length} 題題庫 JSON！`);
+}
+
 export function AdminDashboard() {
   const navigate = useNavigate();
 
@@ -287,7 +368,7 @@ export function AdminSubjectView() {
             {activeTab === 'tasks' && <TasksTab tasks={tasks} subjectId={subjectId} onRefresh={fetchData} config={config} questions={questions} />}
             {activeTab === 'questions' && <QuestionsTab questions={questions} onRefresh={fetchData} subjectId={subjectId} />}
             {activeTab === 'ai' && <AIGeneratorTab subjectId={subjectId} onRefresh={fetchData} />}
-        {activeTab === 'import' && <ImportTab subjectId={subjectId} config={config} />}
+            {activeTab === 'import' && <ImportTab subjectId={subjectId} config={config} questions={questions} />}
             {activeTab === 'attempts' && <AttemptsTab attempts={attempts} questions={questions} tasks={tasks} onRefresh={fetchData} />}
             {activeTab === 'paper' && <PaperTestTab questions={questions} attempts={attempts} subjectId={subjectId} />}
             {activeTab === 'settings' && <SettingsTab config={config} subjectId={subjectId} />}
@@ -1000,14 +1081,55 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
     } catch(e) { console.error(e); }
   };
 
+  const handleExportAll = () => {
+    exportQuestionsToJSON(questions, subjectId);
+  };
+
+  const handleExportSelected = () => {
+    const selectedList = questions.filter(q => selectedQuestions.includes(q.id));
+    if (selectedList.length === 0) return toast('請先勾選欲匯出的題目');
+    exportQuestionsToJSON(selectedList, subjectId, `選中${selectedList.length}題`);
+  };
+
+  const handleExportFiltered = () => {
+    if (filteredQuestions.length === 0) return toast('目前篩選沒有任何題目');
+    const filterLabel = filterType === 'multiple_choice' ? '選擇題' : filterType === 'fill_in_the_blank' ? '填空題' : filterType === 'question_group' ? '題組' : filterType === 'multimedia' ? '多媒體' : '篩選';
+    exportQuestionsToJSON(filteredQuestions, subjectId, filterLabel);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-y-3">
         <h3 className="font-serif text-xl font-bold text-[#4A3F35]">題庫管理 (共 {questions.length} 題)</h3>
-        <div className="space-x-2 flex items-center">
+        <div className="space-x-2 flex items-center flex-wrap gap-y-2">
           <button onClick={downloadSkillTxt} className="bg-[#EAE2D3] hover:bg-[#D5CFC4] text-[#4A3F35] px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">
             下載題庫生成 skill.txt
           </button>
+          <button 
+            onClick={handleExportAll} 
+            className="bg-[#5C7D64] hover:bg-[#4D6953] text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-1.5"
+            title={`匯出題庫 JSON (全部共 ${questions.length} 題)`}
+          >
+            <Download size={15} /> 匯出題庫 JSON
+          </button>
+          {selectedQuestions.length > 0 && (
+            <button 
+              onClick={handleExportSelected} 
+              className="bg-[#3D6B8C] hover:bg-[#305570] text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-1.5"
+              title="匯出勾選的題目"
+            >
+              <Download size={15} /> 匯出選中 ({selectedQuestions.length})
+            </button>
+          )}
+          {filterType !== 'all' && filteredQuestions.length !== questions.length && (
+            <button 
+              onClick={handleExportFiltered} 
+              className="bg-[#8B7355] hover:bg-[#725E45] text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-1.5"
+              title="匯出符合目前題型篩選的題目"
+            >
+              <Download size={15} /> 匯出當前篩選 ({filteredQuestions.length})
+            </button>
+          )}
           {selectedQuestions.length > 0 && (
             <button onClick={handleBulkDelete} className="bg-[#B65D48] hover:bg-[#8B4534] text-white px-3 py-1.5 rounded-lg text-sm transition-colors">
               刪除選中 ({selectedQuestions.length})
@@ -1253,7 +1375,7 @@ export function AIGeneratorTab({ subjectId, onRefresh }: { subjectId: Subject, o
   );
 }
 
-export function ImportTab({ subjectId, config }: { subjectId: Subject, config: SubjectConfig }) {
+export function ImportTab({ subjectId, config, questions = [] }: { subjectId: Subject, config: SubjectConfig, questions?: Question[] }) {
   const [isImporting, setIsImporting] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [previewData, setPreviewData] = useState<Partial<Question>[]>([]);
@@ -1506,7 +1628,18 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
 
   return (
     <div className="space-y-4">
-      <h3 className="font-serif text-xl font-bold text-[#4A3F35] mb-2">匯入題庫 (支援 JSON 與 Excel)</h3>
+      <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+        <h3 className="font-serif text-xl font-bold text-[#4A3F35]">匯入題庫 (支援 JSON 與 Excel)</h3>
+        {questions && questions.length > 0 && (
+          <button
+            onClick={() => exportQuestionsToJSON(questions, subjectId)}
+            className="bg-[#5C7D64] hover:bg-[#4D6953] text-white px-3.5 py-1.5 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center gap-1.5"
+            title={`匯出備份當前全部題庫 (${questions.length} 題)`}
+          >
+            <Download size={15} /> 匯出當前題庫備份 JSON ({questions.length})
+          </button>
+        )}
+      </div>
       
       <div className="border-2 border-dashed border-[#D5CFC4] hover:border-purple-500 rounded-xl p-8 text-center transition-colors">
         <input type="file" accept=".json, .xlsx, .xls" onChange={handleFileUpload} className="hidden" id="file-upload" disabled={isImporting} />
@@ -1518,7 +1651,31 @@ export function ImportTab({ subjectId, config }: { subjectId: Subject, config: S
       </div>
 
       <div className="mt-4">
-        <p className="text-sm text-[#8C7A6B] mb-2">或直接貼上 JSON 陣列：</p>
+        <div className="flex justify-between items-center mb-2">
+          <p className="text-sm text-[#8C7A6B]">或直接貼上 JSON 陣列：</p>
+          {questions && questions.length > 0 && (
+            <button
+              onClick={() => {
+                const sample = questions.slice(0, 2).map(q => {
+                  const item: Record<string, any> = {
+                    prompt: q.prompt,
+                    correctAnswer: q.correctAnswer,
+                    unit: q.unit,
+                    difficulty: q.difficulty,
+                    type: q.type
+                  };
+                  if (q.options) item.options = q.options;
+                  if (q.explanation) item.explanation = q.explanation;
+                  return item;
+                });
+                setTextInput(JSON.stringify(sample, null, 2));
+              }}
+              className="text-xs text-[#8C7A6B] hover:text-[#4A3F35] underline font-medium"
+            >
+              填入題庫範例格式
+            </button>
+          )}
+        </div>
         <textarea 
           value={textInput} 
           onChange={e => setTextInput(e.target.value)} 
