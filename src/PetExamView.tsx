@@ -18,8 +18,23 @@ import {
   getDoc, 
   setDoc, 
   addDoc,
-  deleteDoc
+  deleteDoc,
+  updateDoc
 } from 'firebase/firestore';
+
+function cleanFirestoreData<T extends Record<string, any>>(obj: T): Partial<T> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        result[key] = cleanFirestoreData(value);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result as Partial<T>;
+}
 import { 
   Clock, 
   CheckCircle2, 
@@ -317,7 +332,7 @@ export function PetExamRunner({ user }: { user: any }) {
               clue: q.clue
             });
           } else if (q.part === 'part2_a') {
-            const rowId = q.verbRowId || 1;
+            const rowId = q.verbRowId || (q.itemNumber !== undefined ? q.itemNumber : 1);
             if (!p2aMap[rowId]) {
               const zhMatch = q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/);
               const subMatch = q.prompt.match(/主詞:\s*([^[]+)/);
@@ -1327,10 +1342,108 @@ export function PetAdminPanel({ onRefresh }: { onRefresh: () => void }) {
       if (!match) throw new Error('未在輸入文字中找到合法的 JSON 物件 ({...}) 或陣列 ([...]) 格式。');
 
       const rawParsed = JSON.parse(match[0]);
+
+      // 檢查是否為通用題目陣列 (Flat Question List)，如 [ { prompt: "...", examDate: "1202", ... } ]
+      const isFlatQuestionList = Array.isArray(rawParsed) && rawParsed.some(
+        (item: any) => item && (item.prompt || item.correctAnswer || item['題目'] || item.Question)
+      );
+
+      if (isFlatQuestionList) {
+        const flatQuestions: any[] = [];
+        const affectedDates = new Set<string>();
+
+        for (const item of rawParsed) {
+          const prompt = item.prompt || item['題目'] || item.Question;
+          const correctAnswer = item.correctAnswer || item['答案'] || item.Answer;
+          if (!prompt || !correctAnswer) continue;
+
+          // 考期自動判定：優先從該題讀取 examDate 或 date，若無則依序採用上方選單的 importDate
+          const targetDate = String(item.examDate || item.date || importDate || '').trim();
+          if (!targetDate) {
+            throw new Error('無法識別考期日期，請在題目物件內註明 "examDate": "1202" 或在上方考期選單選擇所屬考期。');
+          }
+          affectedDates.add(targetDate);
+
+          const qItem = {
+            subject: 'pet',
+            examDate: targetDate,
+            date: targetDate,
+            unit: item.unit ?? 1,
+            difficulty: item.difficulty || 'medium',
+            type: item.type || (item.options && item.options.length > 0 ? 'multiple_choice' : 'fill_in_the_blank'),
+            prompt: String(prompt).replace(/\[SOURCE_IMAGE\]/g, ''),
+            options: item.options || null,
+            correctAnswer: String(correctAnswer),
+            clue: item.clue || null,
+            explanation: item.explanation || null,
+            part: item.part || null,
+            verbTense: item.verbTense || null,
+            itemNumber: item.itemNumber !== undefined ? item.itemNumber : null,
+            verbRowId: item.verbRowId !== undefined ? item.verbRowId : (item.itemNumber !== undefined ? item.itemNumber : null),
+            acceptableAnswers: Array.isArray(item.acceptableAnswers)
+              ? item.acceptableAnswers
+              : (item.acceptableAnswers ? [String(item.acceptableAnswers)] : [String(correctAnswer)]),
+            createdAt: Date.now()
+          };
+          flatQuestions.push(cleanFirestoreData(qItem));
+        }
+
+        if (flatQuestions.length === 0) {
+          throw new Error('未能在 JSON 中讀取到任何包含 prompt 與 correctAnswer 的題目。');
+        }
+
+        // 依考期分組寫入：
+        // 若該考期題目數 >= 20 題，視為整卷考卷覆寫；若 < 20 題，採取智慧匹配更新/新增，避免誤清空其餘考題
+        const byDate: Record<string, any[]> = {};
+        for (const q of flatQuestions) {
+          if (!byDate[q.examDate]) byDate[q.examDate] = [];
+          byDate[q.examDate].push(q);
+        }
+
+        for (const [dateKey, list] of Object.entries(byDate)) {
+          if (list.length >= 20) {
+            const qSnap = await getDocs(
+              query(collection(db, 'questions'), where('subject', '==', 'pet'), where('examDate', '==', dateKey))
+            );
+            for (const docItem of qSnap.docs) {
+              await deleteDoc(docItem.ref);
+            }
+            for (const q of list) {
+              await addDoc(collection(db, 'questions'), q);
+            }
+          } else {
+            const qSnap = await getDocs(
+              query(collection(db, 'questions'), where('subject', '==', 'pet'), where('examDate', '==', dateKey))
+            );
+            const existingDocs = qSnap.docs.map(d => ({ id: d.id, data: d.data() }));
+
+            for (const q of list) {
+              const matched = existingDocs.find(
+                ed => ed.data.prompt === q.prompt || 
+                  (q.part && ed.data.part === q.part && q.itemNumber && ed.data.itemNumber === q.itemNumber && (!q.verbTense || ed.data.verbTense === q.verbTense))
+              );
+              if (matched) {
+                await updateDoc(doc(db, 'questions', matched.id), q);
+              } else {
+                await addDoc(collection(db, 'questions'), q);
+              }
+            }
+          }
+        }
+
+        const dateListStr = Array.from(affectedDates).join(', ');
+        toast(`成功！已自動依考期歸類，共同步 ${flatQuestions.length} 道考題至考期 [${dateListStr}]！`);
+        setImportJsonText('');
+        loadSettings();
+        onRefresh();
+        setIsImporting(false);
+        return;
+      }
+
       const papersToProcess: PetExamPaper[] = [];
 
       if (Array.isArray(rawParsed)) {
-        // Option 1: 陣列形式 [ { examDate: "0909", ... }, ... ]
+        // 多回考卷陣列形式 [ { examDate: "0909", part1_vocabulary: ... }, ... ]
         papersToProcess.push(...rawParsed);
       } else if (rawParsed && typeof rawParsed === 'object') {
         if (Array.isArray((rawParsed as any).quizzes)) {

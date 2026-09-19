@@ -404,6 +404,7 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
   const [qgCount, setQgCount] = useState(0);
   const [selectionMode, setSelectionMode] = useState<'random'|'manual'>('random');
   const [manualSelectedQs, setManualSelectedQs] = useState<string[]>([]);
+  const [lastSelectedManualIndex, setLastSelectedManualIndex] = useState<number | null>(null);
   const [manualFilter, setManualFilter] = useState<string>('all');
   const [maxHearts, setMaxHearts] = useState<number>(3);
   const [timeLimit, setTimeLimit] = useState<number>(10);
@@ -481,6 +482,33 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
     else if (manualFilter !== 'all') q = q.filter(x => x.type === manualFilter && !x.mediaUrl);
     return q;
   }, [baseFilteredQuestions, diff, manualFilter]);
+
+  const toggleSelectManualQuestion = (id: string, index: number, isShiftKey: boolean = false) => {
+    const isCurrentlySelected = manualSelectedQs.includes(id);
+
+    if (isShiftKey && lastSelectedManualIndex !== null && lastSelectedManualIndex !== index) {
+      const start = Math.min(lastSelectedManualIndex, index);
+      const end = Math.max(lastSelectedManualIndex, index);
+      const rangeIds = filteredManualQuestions.slice(start, end + 1).map(q => q.id);
+
+      const shouldSelect = !isCurrentlySelected;
+      if (shouldSelect) {
+        const next = new Set([...manualSelectedQs, ...rangeIds]);
+        setManualSelectedQs(Array.from(next));
+      } else {
+        const rangeSet = new Set(rangeIds);
+        setManualSelectedQs(manualSelectedQs.filter(x => !rangeSet.has(x)));
+      }
+      setLastSelectedManualIndex(index);
+    } else {
+      if (isCurrentlySelected) {
+        setManualSelectedQs(manualSelectedQs.filter(x => x !== id));
+      } else {
+        setManualSelectedQs([...manualSelectedQs, id]);
+      }
+      setLastSelectedManualIndex(index);
+    }
+  };
 
   const handleCreate = async () => {
     if (selectionMode === 'random') {
@@ -729,13 +757,23 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                 <button onClick={() => setManualFilter('multimedia')} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap ${manualFilter === 'multimedia' ? 'bg-orange-600 text-white' : 'bg-orange-50 text-orange-800'}`}>多媒體</button>
               </div>
               <div className="space-y-2">
-                {filteredManualQuestions.map(q => (
-                  <label key={q.id} className="flex items-start space-x-3 cursor-pointer group hover:bg-[#F5F5F0] p-1 rounded">
-                    <input type="checkbox" checked={manualSelectedQs.includes(q.id)} onChange={(e) => {
-                      if (e.target.checked) setManualSelectedQs([...manualSelectedQs, q.id]);
-                      else setManualSelectedQs(manualSelectedQs.filter(id => id !== q.id));
-                    }} className="mt-1 accent-[#C2A878]" />
-                    <div className="flex-1 text-sm text-[#4A3F35]">
+                {filteredManualQuestions.map((q, idx) => (
+                  <div key={q.id} className="flex items-start space-x-3 group hover:bg-[#F5F5F0] p-1.5 rounded transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={manualSelectedQs.includes(q.id)} 
+                      onClick={(e) => {
+                        toggleSelectManualQuestion(q.id, idx, e.shiftKey);
+                      }}
+                      onChange={() => {}} 
+                      className="mt-1 accent-[#C2A878] cursor-pointer" 
+                    />
+                    <div 
+                      className="flex-1 text-sm text-[#4A3F35] cursor-pointer select-none"
+                      onClick={(e) => {
+                        toggleSelectManualQuestion(q.id, idx, e.shiftKey);
+                      }}
+                    >
                       <div className="flex items-center space-x-2 mb-1 flex-wrap gap-y-1">
                         <span className="bg-[#EAE2D3] text-[#8C7A6B] px-1.5 py-0.5 rounded text-[10px] font-bold">{formatUnitBadge(q.unit)}</span>
                         {q.type === 'multiple_choice' && !q.mediaUrl && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold">選擇</span>}
@@ -746,11 +784,12 @@ export function TasksTab({ tasks, subjectId, onRefresh, config, questions = [] }
                       </div>
                       <p className="line-clamp-2">{(q.prompt || '').replace(/\[SOURCE_IMAGE\]/g, '')}</p>
                     </div>
-                  </label>
+                  </div>
                 ))}
               </div>
-              <div className="mt-3 pt-3 border-t border-[#EAE6DF] text-sm font-bold text-[#4A3F35]">
-                已選 {manualSelectedQs.length} 題
+              <div className="mt-3 pt-3 border-t border-[#EAE6DF] flex items-center justify-between text-sm">
+                <span className="font-bold text-[#4A3F35]">已選 {manualSelectedQs.length} 題</span>
+                <span className="text-xs text-[#A69B8F]">💡 可按住 Shift 點擊核取方塊連續選取多題</span>
               </div>
             </div>
           )}
@@ -932,6 +971,7 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
   const [newExplanation, setNewExplanation] = useState('');
 
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
+  const [lastSelectedQIndex, setLastSelectedQIndex] = useState<number | null>(null);
   const [filterType, setFilterType] = useState<string>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -1052,13 +1092,40 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
   }, [questions, filterType]);
 
   const toggleSelectAll = () => {
-    if (selectedQuestions.length === filteredQuestions.length) setSelectedQuestions([]);
-    else setSelectedQuestions(filteredQuestions.map(q => q.id));
+    if (selectedQuestions.length === filteredQuestions.length) {
+      setSelectedQuestions([]);
+      setLastSelectedQIndex(null);
+    } else {
+      setSelectedQuestions(filteredQuestions.map(q => q.id));
+    }
   };
 
-  const toggleSelectQuestion = (id: string) => {
-    if (selectedQuestions.includes(id)) setSelectedQuestions(selectedQuestions.filter(x => x !== id));
-    else setSelectedQuestions([...selectedQuestions, id]);
+  const toggleSelectQuestion = (id: string, index: number, isShiftKey: boolean = false) => {
+    const isCurrentlySelected = selectedQuestions.includes(id);
+
+    if (isShiftKey && lastSelectedQIndex !== null && lastSelectedQIndex !== index) {
+      const start = Math.min(lastSelectedQIndex, index);
+      const end = Math.max(lastSelectedQIndex, index);
+      const rangeIds = filteredQuestions.slice(start, end + 1).map(q => q.id);
+
+      // 若起點最後一次操作是選取，或當前項目尚未被選取，則將整段範圍加入選取；否則整段取消選取
+      const shouldSelect = !isCurrentlySelected;
+      if (shouldSelect) {
+        const next = new Set([...selectedQuestions, ...rangeIds]);
+        setSelectedQuestions(Array.from(next));
+      } else {
+        const rangeSet = new Set(rangeIds);
+        setSelectedQuestions(selectedQuestions.filter(x => !rangeSet.has(x)));
+      }
+      setLastSelectedQIndex(index);
+    } else {
+      if (isCurrentlySelected) {
+        setSelectedQuestions(selectedQuestions.filter(x => x !== id));
+      } else {
+        setSelectedQuestions([...selectedQuestions, id]);
+      }
+      setLastSelectedQIndex(index);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -1213,9 +1280,12 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
 
       <div className="max-h-[600px] overflow-y-auto pr-2 space-y-2">
         {filteredQuestions.length > 0 && (
-          <div className="flex items-center px-4 py-2 bg-[#FDFBF7] rounded-lg border border-[#D5CFC4] mb-2 sticky top-0 z-10">
-            <input type="checkbox" checked={selectedQuestions.length > 0 && selectedQuestions.length === filteredQuestions.length} onChange={toggleSelectAll} className="w-4 h-4 mr-3" />
-            <span className="text-sm text-[#8C7A6B] font-bold">全選目前顯示 ({filteredQuestions.length})</span>
+          <div className="flex items-center justify-between px-4 py-2 bg-[#FDFBF7] rounded-lg border border-[#D5CFC4] mb-2 sticky top-0 z-10">
+            <div className="flex items-center">
+              <input type="checkbox" checked={selectedQuestions.length > 0 && selectedQuestions.length === filteredQuestions.length} onChange={toggleSelectAll} className="w-4 h-4 mr-3" />
+              <span className="text-sm text-[#8C7A6B] font-bold">全選目前顯示 ({filteredQuestions.length})</span>
+            </div>
+            <span className="text-xs text-[#A69B8F] hidden sm:inline">💡 可按住 Shift 點擊核取方塊連續選取多題</span>
           </div>
         )}
         {filteredQuestions.map((q, i) => (
@@ -1223,8 +1293,11 @@ export function QuestionsTab({ questions, onRefresh, subjectId }: { questions: Q
             <input 
               type="checkbox" 
               checked={selectedQuestions.includes(q.id)} 
-              onChange={() => toggleSelectQuestion(q.id)} 
-              className="mt-1 w-4 h-4 mr-4" 
+              onClick={(e) => {
+                toggleSelectQuestion(q.id, i, e.shiftKey);
+              }}
+              onChange={() => {}} 
+              className="mt-1 w-4 h-4 mr-4 cursor-pointer accent-[#C2A878]" 
             />
             <div className="flex-1">
               <div className="flex justify-between items-start mb-2">
@@ -1492,8 +1565,11 @@ export function ImportTab({ subjectId, config, questions = [] }: { subjectId: Su
       let explanation = item.explanation || item['詳解'] || null;
       let subQuestions = item.subQuestions || item['子問題'] || null;
 
+      const itemExamDate = item.examDate ? String(item.examDate).trim() : (item.date ? String(item.date).trim() : null);
+      const targetSubject = item.subject || (itemExamDate ? 'pet' : subjectId);
+
       const questionPayload = cleanFirestoreData({
-        subject: subjectId,
+        subject: targetSubject,
         unit: finalUnit,
         difficulty: itemDiff,
         type: itemType,
@@ -1505,6 +1581,15 @@ export function ImportTab({ subjectId, config, questions = [] }: { subjectId: Su
         mediaType: mediaType ?? null,
         explanation: explanation ?? null,
         subQuestions: subQuestions ?? null,
+        examDate: itemExamDate ?? null,
+        date: itemExamDate ?? null,
+        part: item.part || null,
+        verbTense: item.verbTense || null,
+        itemNumber: item.itemNumber !== undefined ? item.itemNumber : null,
+        verbRowId: item.verbRowId !== undefined ? item.verbRowId : (item.itemNumber !== undefined ? item.itemNumber : null),
+        acceptableAnswers: Array.isArray(item.acceptableAnswers)
+          ? item.acceptableAnswers
+          : (item.acceptableAnswers ? [String(item.acceptableAnswers)] : null),
         createdAt: Date.now()
       });
 
@@ -1519,10 +1604,14 @@ export function ImportTab({ subjectId, config, questions = [] }: { subjectId: Su
     setIsImporting(true);
     try {
       for (const item of previewData) {
+        const itemExamDate = item.examDate ? String(item.examDate).trim() : (item.date ? String(item.date).trim() : null);
+        const targetSubject = item.subject || (itemExamDate ? 'pet' : subjectId);
         const previewPayload = cleanFirestoreData({
           ...item,
           prompt: item.prompt ? item.prompt.replace(/\[SOURCE_IMAGE\]/g, '') : '',
-          subject: subjectId,
+          subject: targetSubject,
+          examDate: itemExamDate ?? (item.examDate || null),
+          date: itemExamDate ?? (item.date || null),
           createdAt: Date.now()
         });
         await addDoc(collection(db, 'questions'), previewPayload);
@@ -1724,16 +1813,41 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
   const [selectedTask, setSelectedTask] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [selectedAttempts, setSelectedAttempts] = useState<string[]>([]);
+  const [lastSelectedAttemptIndex, setLastSelectedAttemptIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedAttemptId, setExpandedAttemptId] = useState<string | null>(null);
 
-  const toggleSelectAttempt = (id: string) => {
-    setSelectedAttempts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAttempt = (id: string, index: number, isShiftKey: boolean = false) => {
+    const isCurrentlySelected = selectedAttempts.includes(id);
+
+    if (isShiftKey && lastSelectedAttemptIndex !== null && lastSelectedAttemptIndex !== index) {
+      const start = Math.min(lastSelectedAttemptIndex, index);
+      const end = Math.max(lastSelectedAttemptIndex, index);
+      const rangeIds = searchedAttempts.slice(start, end + 1).map(a => a.id);
+
+      const shouldSelect = !isCurrentlySelected;
+      if (shouldSelect) {
+        const next = new Set([...selectedAttempts, ...rangeIds]);
+        setSelectedAttempts(Array.from(next));
+      } else {
+        const rangeSet = new Set(rangeIds);
+        setSelectedAttempts(selectedAttempts.filter(x => !rangeSet.has(x)));
+      }
+      setLastSelectedAttemptIndex(index);
+    } else {
+      if (isCurrentlySelected) {
+        setSelectedAttempts(prev => prev.filter(x => x !== id));
+      } else {
+        setSelectedAttempts(prev => [...prev, id]);
+      }
+      setLastSelectedAttemptIndex(index);
+    }
   };
 
   const toggleSelectAllAttempts = () => {
     if (selectedAttempts.length === searchedAttempts.length) {
       setSelectedAttempts([]);
+      setLastSelectedAttemptIndex(null);
     } else {
       setSelectedAttempts(searchedAttempts.map(a => a.id));
     }
@@ -1951,6 +2065,7 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
         <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4 items-center">
           <div className="flex items-center space-x-4">
              <h3 className="font-serif font-bold text-[#5A4F45]">實時答題歷史明細</h3>
+             <span className="text-xs text-[#A69B8F] hidden sm:inline">💡 可按住 Shift 點擊核取方塊連續選取多筆</span>
              {selectedAttempts.length > 0 && (
                 <button disabled={deleting} onClick={() => handleDeleteAttempts(selectedAttempts)} className="bg-[#BC7665] hover:bg-[#AC6655] text-[#4A3F35] px-3 py-1 rounded-lg text-xs font-bold transition-colors">
                    刪除已選 ({selectedAttempts.length})
@@ -1981,11 +2096,19 @@ export function AttemptsTab({ attempts, questions, tasks, onRefresh }: { attempt
               </tr>
             </thead>
             <tbody>
-              {searchedAttempts.map(a => (
+              {searchedAttempts.map((a, idx) => (
                 <React.Fragment key={a.id}>
                   <tr className="border-b border-[#D5CFC4]/50 hover:bg-white/30 cursor-pointer" onClick={() => setExpandedAttemptId(expandedAttemptId === a.id ? null : a.id)}>
                     <td className="p-4" onClick={e => e.stopPropagation()}>
-                       <input type="checkbox" checked={selectedAttempts.includes(a.id)} onChange={() => toggleSelectAttempt(a.id)} className="w-4 h-4 rounded border-[#D5CFC4]" />
+                       <input 
+                         type="checkbox" 
+                         checked={selectedAttempts.includes(a.id)} 
+                         onClick={(e) => {
+                           toggleSelectAttempt(a.id, idx, e.shiftKey);
+                         }}
+                         onChange={() => {}} 
+                         className="w-4 h-4 rounded border-[#D5CFC4] cursor-pointer" 
+                       />
                     </td>
                     <td className="p-4 text-[#6A5F55]">{new Date(a.timestamp).toLocaleString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="p-4 text-[#4A3F35] flex items-center flex-wrap gap-1">
@@ -2045,6 +2168,7 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
   const [mcCount, setMcCount] = useState(10);
   const [fibCount, setFibCount] = useState(10);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedPaperIndex, setLastSelectedPaperIndex] = useState<number | null>(null);
 
   const wrongQuestionIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2071,18 +2195,37 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
     const fibSelected = [...fibQuestions].sort(() => 0.5 - Math.random()).slice(0, fibCount);
     const newSelected = new Set([...mcSelected.map(q => q.id), ...fibSelected.map(q => q.id)]);
     setSelectedIds(newSelected);
+    setLastSelectedPaperIndex(null);
   };
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: string, index: number, isShiftKey: boolean = false) => {
+    const isCurrentlySelected = selectedIds.has(id);
     const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
+
+    if (isShiftKey && lastSelectedPaperIndex !== null && lastSelectedPaperIndex !== index) {
+      const start = Math.min(lastSelectedPaperIndex, index);
+      const end = Math.max(lastSelectedPaperIndex, index);
+      const rangeQuestions = filteredQuestions.slice(start, end + 1);
+
+      const shouldSelect = !isCurrentlySelected;
+      rangeQuestions.forEach(q => {
+        if (shouldSelect) next.add(q.id);
+        else next.delete(q.id);
+      });
+      setSelectedIds(next);
+      setLastSelectedPaperIndex(index);
+    } else {
+      if (isCurrentlySelected) next.delete(id);
+      else next.add(id);
+      setSelectedIds(next);
+      setLastSelectedPaperIndex(index);
+    }
   };
 
   const toggleSelectAll = () => {
     if (selectedIds.size === filteredQuestions.length) {
       setSelectedIds(new Set());
+      setLastSelectedPaperIndex(null);
     } else {
       setSelectedIds(new Set(filteredQuestions.map((q: Question) => q.id)));
     }
@@ -2269,8 +2412,11 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
       </div>
 
       <div className="bg-white p-6 rounded-2xl">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="font-bold text-[#4A3F35] text-lg">預覽與選取題目 (已選: {selectedIds.size})</h4>
+        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <h4 className="font-bold text-[#4A3F35] text-lg">預覽與選取題目 (已選: {selectedIds.size})</h4>
+            <span className="text-xs text-[#A69B8F] hidden sm:inline">💡 可按住 Shift 點擊核取方塊連續選取多題</span>
+          </div>
           <div className="flex space-x-2">
             <button onClick={() => exportPaper('pdf')} className="bg-red-500/10 hover:bg-[#AC6655]/30 text-[#BC7665] border border-[#BC7665]/30 px-4 py-2 rounded-lg font-bold transition-all text-sm">匯出 PDF 試卷</button>
             <button onClick={() => exportPaper('docx')} className="bg-[#9BA8B5]/10 hover:bg-[#8B98A5]/30 text-[#7A8A99] border border-[#9BA8B5]/30 px-4 py-2 rounded-lg font-bold transition-all text-sm">匯出 DOCX 試卷</button>
@@ -2282,7 +2428,7 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
             <thead className="bg-[#FDFBF7] text-[#8C7A6B]">
               <tr>
                 <th className="p-3 w-10">
-                  <input type="checkbox" checked={selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0} onChange={toggleSelectAll} className="w-4 h-4 accent-purple-500" />
+                  <input type="checkbox" checked={selectedIds.size === filteredQuestions.length && filteredQuestions.length > 0} onChange={toggleSelectAll} className="w-4 h-4 accent-purple-500 cursor-pointer" />
                 </th>
                 <th className="p-3">題型</th>
                 <th className="p-3">難度</th>
@@ -2291,10 +2437,19 @@ export function PaperTestTab({ questions, attempts, subjectId }: { questions: Qu
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-700 max-h-[400px] overflow-y-auto">
-              {filteredQuestions.map(q => (
-                <tr key={q.id} className="hover:bg-[#EAE6DF]/50 cursor-pointer" onClick={() => toggleSelect(q.id)}>
+              {filteredQuestions.map((q, idx) => (
+                <tr 
+                  key={q.id} 
+                  className="hover:bg-[#EAE6DF]/50 cursor-pointer select-none" 
+                  onClick={(e) => toggleSelect(q.id, idx, e.shiftKey)}
+                >
                   <td className="p-3">
-                    <input type="checkbox" checked={selectedIds.has(q.id)} readOnly className="w-4 h-4 accent-purple-500" />
+                    <input 
+                      type="checkbox" 
+                      checked={selectedIds.has(q.id)} 
+                      readOnly 
+                      className="w-4 h-4 accent-purple-500 cursor-pointer" 
+                    />
                   </td>
                   <td className="p-3">{q.type === 'multiple_choice' ? '選擇' : '填空'}</td>
                   <td className="p-3">{q.difficulty}</td>
