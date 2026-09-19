@@ -220,7 +220,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['awake', 'Awake', 'awakes', 'Awakes'],
           pastSimple: ['awoke', 'Awoke'],
-          participle: ['awaken', 'awoken', 'Awaken', 'Awoken', 'have awaken', 'has awaken', 'has awoken', 'have awoken']
+          participle: ['awaken', 'awoken', 'Awaken', 'Awoken']
         }
       },
       {
@@ -233,7 +233,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['beat', 'Beat', 'beats', 'Beats'],
           pastSimple: ['beat', 'Beat'],
-          participle: ['beaten', 'Beaten', 'has beaten', 'have beaten']
+          participle: ['beaten', 'Beaten']
         }
       },
       {
@@ -246,7 +246,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['begin', 'Begin', 'begins', 'Begins'],
           pastSimple: ['began', 'Began'],
-          participle: ['begun', 'Begun', 'has begun', 'have begun']
+          participle: ['begun', 'Begun']
         }
       },
       {
@@ -259,7 +259,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['bite', 'Bite', 'bites', 'Bites'],
           pastSimple: ['bit', 'Bit'],
-          participle: ['bitten', 'Bitten', 'has bitten', 'have bitten']
+          participle: ['bitten', 'Bitten']
         }
       },
       {
@@ -272,7 +272,7 @@ export const SAMPLE_0909_PET_EXAM: PetExamPaper = {
         acceptableAnswers: {
           presentSimple: ['blow', 'Blow', 'blows', 'Blows'],
           pastSimple: ['blew', 'Blew'],
-          participle: ['blown', 'Blown', 'has blown', 'have blown']
+          participle: ['blown', 'Blown']
         }
       }
     ],
@@ -305,7 +305,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part I - Sec A] 單字英譯 ${item.id}. ${item.chinese} __________________`,
       correctAnswer: item.english,
-      clue: `中文：${item.chinese}，英文答案：${item.english}`,
+      clue: item.chinese ? `中文：${item.chinese}` : '',
       explanation: `【Part I Section A 單字翻譯】中文「${item.chinese}」對應之英文單字為「${item.english}」`,
       acceptableAnswers: item.acceptableAnswers || [],
       createdAt: Date.now()
@@ -326,7 +326,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part I - Sec B] 句子選詞填空 ${item.id}. ${item.sentence}`,
       correctAnswer: item.correctAnswer,
-      clue: item.clue || `答案是：${item.correctAnswer}`,
+      clue: item.clue || '',
       explanation: `【Part I Section B 語境選詞填空】根據句意填入「${item.correctAnswer}」`,
       acceptableAnswers: item.acceptableAnswers || [],
       createdAt: Date.now()
@@ -376,7 +376,12 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       createdAt: Date.now()
     });
 
-    // Participle
+    // Participle (過去分詞不可含 have/has 及空格)
+    const cleanParticiple = String(item.participle || '').replace(/^(?:have|has)\s+/i, '').trim();
+    const cleanAcceptablePart = (item.acceptableAnswers?.participle || [cleanParticiple])
+      .map((a: string) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
+      .filter((a: string) => a.length > 0);
+
     result.push({
       subject: 'pet',
       examDate: itemDate,
@@ -389,10 +394,10 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       difficulty: 'medium',
       type: 'fill_in_the_blank',
       prompt: `[Part II - Sec A 時態填空] 動詞填空 (${item.verbChinese}) [Participle 過去分詞]`,
-      correctAnswer: item.participle,
+      correctAnswer: cleanParticiple,
       clue: `動詞：${item.verbChinese}，過去分詞 (Participle)`,
-      explanation: `【動詞三態時態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${item.participle}」`,
-      acceptableAnswers: item.acceptableAnswers?.participle || [],
+      explanation: `【動詞三態時態填空】${item.verbChinese} 之過去分詞 (Participle) 為「${cleanParticiple}」`,
+      acceptableAnswers: cleanAcceptablePart.length > 0 ? cleanAcceptablePart : [cleanParticiple],
       createdAt: Date.now()
     });
   });
@@ -411,7 +416,7 @@ export function convertPetPaperToQuestions(paper: PetExamPaper): any[] {
       type: 'fill_in_the_blank',
       prompt: `[Part II - Sec B 時態填空] 第 ${item.id} 題. ${item.sentence}`,
       correctAnswer: item.correctAnswer,
-      clue: item.clue || `答案是：${item.correctAnswer}`,
+      clue: item.clue || '',
       explanation: `【Part II Section B 動詞時態填空】${item.sentence} 正確填入動詞時態為「${item.correctAnswer}」`,
       acceptableAnswers: item.acceptableAnswers || [],
       createdAt: Date.now()
@@ -622,11 +627,11 @@ export const PET_AI_SKILL_MARKDOWN = `# Role & Identity (角色設定)
           "subject": "He",
           "presentSimple": "beats",
           "pastSimple": "beat",
-          "participle": "has beaten",
+          "participle": "beaten",
           "acceptableAnswers": {
             "presentSimple": ["beats"],
             "pastSimple": ["beat"],
-            "participle": ["has beaten", "beaten"]
+            "participle": ["beaten", "Beaten"]
           }
         }
       ],

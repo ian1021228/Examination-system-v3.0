@@ -8,7 +8,7 @@ import {
   convertPetPaperToQuestions,
   PET_AI_SKILL_MARKDOWN 
 } from './petExam';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { 
   collection, 
   query, 
@@ -35,6 +35,46 @@ function cleanFirestoreData<T extends Record<string, any>>(obj: T): Partial<T> {
   }
   return result as Partial<T>;
 }
+
+export function cleanChinesePrompt(rawPrompt?: string, rawClue?: string, fallbackAnswer?: string): string {
+  // 1. 如果有 prompt，優先過濾題幹取得純中文詞意
+  let text = String(rawPrompt || '').trim();
+  
+  // 移除常見前綴與序號
+  text = text.replace(/\[Part I\s*[-–—]\s*Sec(?:tion)?\s*A[^\]]*\]/gi, '');
+  text = text.replace(/單字英譯\s*\d*[.、:]?\s*/g, '');
+  text = text.replace(/第\s*\d+\s*題[.、:]?\s*/g, '');
+  text = text.replace(/^\d+[.、:]\s*/g, '');
+  text = text.replace(/_{2,}/g, '');
+
+  // 核心安全過濾：徹底濾除任何「英文答案：...」、「答案：...」、「，英文答案...」
+  text = text.replace(/[，,;；]\s*(?:英文)?答案[：:].*$/gi, '');
+  text = text.replace(/(?:英文)?答案[：:].*$/gi, '');
+  text = text.replace(/^中文[：:]\s*/g, '');
+  text = text.trim();
+
+  // 若還有殘留的英文答案（例如字尾直接包含英文答案）
+  if (fallbackAnswer && text) {
+    const ansEscaped = fallbackAnswer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`[，,;；]?\\s*(?:英文)?(?:答案)?[:：]?\\s*${ansEscaped}`, 'gi'), '');
+    text = text.trim();
+  }
+
+  if (text) return text;
+
+  // 2. 若 prompt 沒有解析成功，從 clue 提取中文
+  if (rawClue) {
+    let clueText = String(rawClue).trim();
+    clueText = clueText.replace(/[，,;；]\s*(?:英文)?答案[：:].*$/gi, '');
+    clueText = clueText.replace(/(?:英文)?答案[：:].*$/gi, '');
+    const m = clueText.match(/中文[：:]\s*([^，,;\n\r]+)/);
+    if (m && m[1].trim()) return m[1].trim();
+    clueText = clueText.replace(/^中文[：:]\s*/g, '').trim();
+    if (clueText) return clueText;
+  }
+
+  return '單字';
+}
 import { 
   Clock, 
   CheckCircle2, 
@@ -60,11 +100,28 @@ import { confirmModal } from './confirm';
 // ==========================================
 export function PetExamDateSelector({ user }: { user: any }) {
   const navigate = useNavigate();
-  const [dateStatus, setDateStatus] = useState<Record<string, { questionCount: number; maxScore?: number; timeLimit?: number }>>({});
+  const [dateStatus, setDateStatus] = useState<Record<string, { 
+    questionCount: number; 
+    maxScore?: number; 
+    maxAccuracy?: number; 
+    avgAccuracy?: number; 
+    attemptCount?: number; 
+    timeLimit?: number 
+  }>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadPetExamStatus();
+
+    const handleAttemptSaved = () => {
+      loadPetExamStatus();
+    };
+    window.addEventListener('pet_exam_attempt_saved', handleAttemptSaved);
+    window.addEventListener('storage', handleAttemptSaved);
+    return () => {
+      window.removeEventListener('pet_exam_attempt_saved', handleAttemptSaved);
+      window.removeEventListener('storage', handleAttemptSaved);
+    };
   }, [user]);
 
   const loadPetExamStatus = async () => {
@@ -79,37 +136,103 @@ export function PetExamDateSelector({ user }: { user: any }) {
       const counts: Record<string, number> = {};
       qSnap.docs.forEach(d => {
         const data = d.data();
-        if (data.examDate) {
-          counts[data.examDate] = (counts[data.examDate] || 0) + 1;
+        const eDate = data.examDate || data.date;
+        if (eDate) {
+          counts[eDate] = (counts[eDate] || 0) + 1;
         }
       });
 
-      // 3. 取得使用者的歷史作答成績
-      let attemptsMap: Record<string, number> = {};
-      if (user?.uid) {
-        const aSnap = await getDocs(query(
-          collection(db, 'attempts'),
-          where('userId', '==', user.uid),
-          where('subject', '==', 'pet')
-        ));
-        aSnap.docs.forEach(d => {
-          const a = d.data();
-          if (a.examDate) {
-            const currentMax = attemptsMap[a.examDate] || 0;
-            if ((a.score || 0) > currentMax) {
-              attemptsMap[a.examDate] = a.score;
+      // 3. 收集使用者的歷史作答成績（同時整合 Firestore 與 LocalStorage，確保立即生效）
+      const currentUid = user?.uid || auth.currentUser?.uid;
+      const dateAttemptsMap: Record<string, { score: number; accuracy: number; timestamp: number }[]> = {};
+
+      const addAttemptItem = (eDate: string, score: number, accuracy: number, timestamp: number) => {
+        if (!eDate) return;
+        if (!dateAttemptsMap[eDate]) {
+          dateAttemptsMap[eDate] = [];
+        }
+        // 避免重複計算同一次測驗 (同一考期、相同分數且時間相差 5 秒內)
+        const isDuplicate = dateAttemptsMap[eDate].some(
+          x => x.score === score && Math.abs(x.timestamp - timestamp) < 5000
+        );
+        if (!isDuplicate) {
+          dateAttemptsMap[eDate].push({ score, accuracy, timestamp });
+        }
+      };
+
+      // a. 從 Firestore 撈取使用者的作答歷史
+      if (currentUid) {
+        try {
+          const aSnap = await getDocs(query(
+            collection(db, 'attempts'),
+            where('userId', '==', currentUid)
+          ));
+          aSnap.docs.forEach(d => {
+            const a = d.data();
+            if (a.subject === 'pet' && a.examDate) {
+              const score = typeof a.score === 'number' ? a.score : 0;
+              const maxScore = typeof a.maxScore === 'number' && a.maxScore > 0 ? a.maxScore : 70;
+              const acc = typeof a.accuracy === 'number' ? a.accuracy : Math.round((score / maxScore) * 100);
+              addAttemptItem(String(a.examDate), score, acc, a.timestamp || 0);
             }
-          }
-        });
+          });
+        } catch (err) {
+          console.warn('Error fetching Firestore attempts:', err);
+        }
       }
 
-      const statusMap: Record<string, { questionCount: number; maxScore?: number; timeLimit?: number }> = {};
+      // b. 從 LocalStorage 撈取作答紀錄（保證即測即現、未登入也能正常累計）
+      try {
+        const localRaw = localStorage.getItem('pet_exam_local_attempts');
+        if (localRaw) {
+          const parsed = JSON.parse(localRaw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((item: any) => {
+              if (item.examDate) {
+                const score = typeof item.score === 'number' ? item.score : 0;
+                const maxScore = typeof item.maxScore === 'number' && item.maxScore > 0 ? item.maxScore : 70;
+                const acc = typeof item.accuracy === 'number' ? item.accuracy : Math.round((score / maxScore) * 100);
+                addAttemptItem(String(item.examDate), score, acc, item.timestamp || 0);
+              }
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error fetching LocalStorage attempts:', err);
+      }
+
+      // 4. 計算每一考期的最高正確率與平均正確率
+      const statusMap: Record<string, { 
+        questionCount: number; 
+        maxScore?: number; 
+        maxAccuracy?: number; 
+        avgAccuracy?: number; 
+        attemptCount?: number; 
+        timeLimit?: number 
+      }> = {};
+
       PET_EXAM_DATES.forEach(d => {
-        // 0909 預設自帶樣卷 70 題
         const qCount = counts[d.id] ?? (d.id === '0909' ? 70 : 0);
+        const attempts = dateAttemptsMap[d.id] || [];
+        const hasAtt = attempts.length > 0;
+
+        let maxScore: number | undefined = undefined;
+        let maxAccuracy: number | undefined = undefined;
+        let avgAccuracy: number | undefined = undefined;
+
+        if (hasAtt) {
+          maxScore = Math.max(...attempts.map(x => x.score));
+          maxAccuracy = Math.max(...attempts.map(x => x.accuracy));
+          const sumAcc = attempts.reduce((sum, x) => sum + x.accuracy, 0);
+          avgAccuracy = Math.round(sumAcc / attempts.length);
+        }
+
         statusMap[d.id] = {
           questionCount: qCount,
-          maxScore: attemptsMap[d.id],
+          maxScore,
+          maxAccuracy,
+          avgAccuracy,
+          attemptCount: attempts.length,
           timeLimit: timeSettings[d.id] || d.defaultTimeLimitMinutes
         };
       });
@@ -151,7 +274,7 @@ export function PetExamDateSelector({ user }: { user: any }) {
         {PET_EXAM_DATES.map((dateItem, idx) => {
           const status = dateStatus[dateItem.id] || { questionCount: 0, timeLimit: 45 };
           const hasQuestions = status.questionCount > 0 || dateItem.id === '0909';
-          const hasAttempted = status.maxScore !== undefined;
+          const hasAttempted = (status.maxAccuracy !== undefined || status.maxScore !== undefined) && (status.attemptCount === undefined || status.attemptCount > 0);
 
           return (
             <div
@@ -221,19 +344,40 @@ export function PetExamDateSelector({ user }: { user: any }) {
               </div>
 
               {/* 底部按鈕與成績 */}
-              <div className="pt-3 border-t border-[#EAE6DF] flex items-center justify-between mt-2">
+              <div className="pt-3 border-t border-[#EAE6DF] flex items-center justify-between mt-2 gap-2">
                 {hasAttempted ? (
-                  <div className="flex items-center text-xs">
-                    <Award size={14} className="text-[#C2A878] mr-1" />
-                    <span className="text-[#8C7A6B]">最高分：</span>
-                    <span className="font-black text-[#B39969] ml-1">{status.maxScore} / 70</span>
+                  <div className="flex flex-col text-xs space-y-0.5">
+                    <div className="flex items-center text-[#4A3F35]">
+                      <Award size={13} className="text-[#C2A878] mr-1 shrink-0" />
+                      <span className="text-[#8C7A6B]">最高正確率:</span>
+                      <span className="font-black text-[#72816B] ml-1">
+                        {status.maxAccuracy !== undefined 
+                          ? `${status.maxAccuracy}%` 
+                          : `${Math.round(((status.maxScore || 0) / 70) * 100)}%`}
+                      </span>
+                    </div>
+                    <div className="flex items-center text-[11px] text-[#8C7A6B] pl-4">
+                      <span>平均正確率:</span>
+                      <span className="font-bold text-[#4A3F35] ml-1">
+                        {status.avgAccuracy !== undefined 
+                          ? `${status.avgAccuracy}%` 
+                          : status.maxAccuracy !== undefined 
+                            ? `${status.maxAccuracy}%` 
+                            : `${Math.round(((status.maxScore || 0) / 70) * 100)}%`}
+                      </span>
+                      {status.attemptCount && status.attemptCount > 1 && (
+                        <span className="text-[#A69B8F] text-[10px] ml-1">({status.attemptCount}次)</span>
+                      )}
+                    </div>
                   </div>
                 ) : (
-                  <span className="text-[11px] text-[#A69B8F]">尚未測驗</span>
+                  <span className="text-[11px] text-[#A69B8F] flex items-center">
+                    <Clock size={12} className="mr-1" /> 尚未測驗
+                  </span>
                 )}
 
                 <button
-                  className={`text-xs font-bold px-3.5 py-2 min-h-[38px] rounded-xl flex items-center transition-all touch-manipulation active:scale-[0.98] ${
+                  className={`text-xs font-bold px-3.5 py-2 min-h-[38px] rounded-xl flex items-center shrink-0 transition-all touch-manipulation active:scale-[0.98] ${
                     hasQuestions
                       ? 'bg-[#4A3F35] hover:bg-[#5A4F45] text-white shadow-sm'
                       : 'bg-[#EAE2D3] text-[#8C7A6B]'
@@ -316,10 +460,10 @@ export function PetExamRunner({ user }: { user: any }) {
         qSnap.docs.forEach(d => {
           const q = d.data();
           if (q.part === 'part1_a') {
-            const matchZh = q.prompt.match(/單字英譯 \d+\.\s*([^_\s]+)/);
+            const zh = cleanChinesePrompt(q.prompt, q.clue, q.correctAnswer);
             p1a.push({
               id: q.itemNumber || p1a.length + 1,
-              chinese: matchZh ? matchZh[1] : (q.clue || '單字'),
+              chinese: zh,
               english: q.correctAnswer,
               acceptableAnswers: q.acceptableAnswers || []
             });
@@ -332,30 +476,76 @@ export function PetExamRunner({ user }: { user: any }) {
               clue: q.clue
             });
           } else if (q.part === 'part2_a') {
-            const rowId = q.verbRowId || (q.itemNumber !== undefined ? q.itemNumber : 1);
+            const zhMatch = q.prompt ? q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/) : null;
+            const subMatch = q.prompt ? q.prompt.match(/主詞:\s*([^[]+)/) : null;
+            const fallbackZh = q.clue ? (q.clue.match(/動詞[：:]\s*([^，,\s]+)/)?.[1] || q.clue) : '';
+            const verbChinese = zhMatch ? zhMatch[1] : (fallbackZh || '動詞');
+            const subject = subMatch ? subMatch[1].trim() : '-';
+
+            // 判斷時態
+            let tense = q.verbTense;
+            if (!tense) {
+              const pStr = String(q.prompt || '');
+              if (/present|現在|原形/i.test(pStr)) tense = 'present';
+              else if (/past simple|過去式/i.test(pStr)) tense = 'past';
+              else if (/participle|過去分詞|分詞|完成/i.test(pStr)) tense = 'participle';
+              else if (q.itemNumber) {
+                const mod = ((q.itemNumber - 1) % 3);
+                tense = mod === 0 ? 'present' : mod === 1 ? 'past' : 'participle';
+              } else {
+                tense = 'present';
+              }
+            }
+
+            // 推算所屬動詞組別 rowId (1~5)
+            let rowId: number;
+            // 優先搜尋是否已有相同動詞中文與主詞的列（避免分散成 15 行）
+            const existingRow = Object.values(p2aMap).find(
+              (r: any) => r.verbChinese === verbChinese && (r.subject === subject || subject === '-' || r.subject === '-')
+            ) as any;
+
+            if (existingRow) {
+              rowId = existingRow.id;
+            } else if (q.verbRowId && q.verbRowId >= 1 && q.verbRowId <= 5) {
+              rowId = q.verbRowId;
+            } else if (q.itemNumber && q.itemNumber >= 1 && q.itemNumber <= 15) {
+              rowId = Math.ceil(q.itemNumber / 3);
+            } else {
+              rowId = Object.keys(p2aMap).length + 1;
+            }
+
             if (!p2aMap[rowId]) {
-              const zhMatch = q.prompt.match(/動詞(?:填空|三態)\s*\(([^)]+)\)/);
-              const subMatch = q.prompt.match(/主詞:\s*([^[]+)/);
-              const fallbackZh = q.clue ? (q.clue.match(/動詞[：:]\s*([^，,\s]+)/)?.[1] || q.clue) : '';
               p2aMap[rowId] = {
                 id: rowId,
-                verbChinese: zhMatch ? zhMatch[1] : (fallbackZh || '動詞'),
-                subject: subMatch ? subMatch[1].trim() : '-',
+                verbChinese: verbChinese,
+                subject: subject,
                 presentSimple: '',
                 pastSimple: '',
                 participle: '',
                 acceptableAnswers: {}
               };
+            } else {
+              if (p2aMap[rowId].verbChinese === '動詞' && verbChinese !== '動詞') {
+                p2aMap[rowId].verbChinese = verbChinese;
+              }
+              if (p2aMap[rowId].subject === '-' && subject !== '-') {
+                p2aMap[rowId].subject = subject;
+              }
             }
-            if (q.verbTense === 'present') {
+
+            if (tense === 'present') {
               p2aMap[rowId].presentSimple = q.correctAnswer;
               p2aMap[rowId].acceptableAnswers.presentSimple = q.acceptableAnswers || [q.correctAnswer];
-            } else if (q.verbTense === 'past') {
+            } else if (tense === 'past') {
               p2aMap[rowId].pastSimple = q.correctAnswer;
               p2aMap[rowId].acceptableAnswers.pastSimple = q.acceptableAnswers || [q.correctAnswer];
-            } else if (q.verbTense === 'participle') {
-              p2aMap[rowId].participle = q.correctAnswer;
-              p2aMap[rowId].acceptableAnswers.participle = q.acceptableAnswers || [q.correctAnswer];
+            } else if (tense === 'participle') {
+              const cleanParticiple = String(q.correctAnswer || '').replace(/^(?:have|has)\s+/i, '').trim();
+              p2aMap[rowId].participle = cleanParticiple;
+              const cleanAcceptable = (q.acceptableAnswers || [cleanParticiple])
+                .map((a: string) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
+                .filter((a: string) => a.length > 0);
+              p2aMap[rowId].acceptableAnswers.participle = cleanAcceptable.length > 0 ? cleanAcceptable : [cleanParticiple];
             }
           } else if (q.part === 'part2_b') {
             p2b.push({
@@ -501,13 +691,20 @@ export function PetExamRunner({ user }: { user: any }) {
 
     // 3. Part II - Sec A 評分 (5 組動詞 x 3 態 = 15 格)
     (paper.part2_verbs?.sectionA_tenses || []).forEach(item => {
-      const presUser = answers2A[`${item.id}_present`] || '';
-      const pastUser = answers2A[`${item.id}_past`] || '';
-      const partUser = answers2A[`${item.id}_participle`] || '';
+      const presUser = (answers2A[`${item.id}_present`] || '').trim();
+      const pastUser = (answers2A[`${item.id}_past`] || '').trim();
+      const partUser = (answers2A[`${item.id}_participle`] || '').trim();
+
+      // 過去分詞不可含 have/has 及空格，進行正規化比對
+      const cleanPartUser = partUser.replace(/^(?:have|has)\s+/i, '').trim();
+      const cleanPartCorrect = String(item.participle || '').replace(/^(?:have|has)\s+/i, '').trim();
+      const cleanPartAcceptable = (item.acceptableAnswers?.participle || [cleanPartCorrect])
+        .map((a: string) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
+        .filter((a: string) => a.length > 0);
 
       const presOk = isAnswerCorrect(presUser, item.presentSimple, item.acceptableAnswers?.presentSimple);
       const pastOk = isAnswerCorrect(pastUser, item.pastSimple, item.acceptableAnswers?.pastSimple);
-      const partOk = isAnswerCorrect(partUser, item.participle, item.acceptableAnswers?.participle);
+      const partOk = isAnswerCorrect(cleanPartUser, cleanPartCorrect, cleanPartAcceptable);
 
       if (presOk) score2A += 1;
       if (pastOk) score2A += 1;
@@ -519,7 +716,7 @@ export function PetExamRunner({ user }: { user: any }) {
         subject: item.subject,
         present: { user: presUser, correct: item.presentSimple, isCorrect: presOk },
         past: { user: pastUser, correct: item.pastSimple, isCorrect: pastOk },
-        participle: { user: partUser, correct: item.participle, isCorrect: partOk }
+        participle: { user: cleanPartUser || partUser, correct: cleanPartCorrect, isCorrect: partOk }
       });
     });
 
@@ -541,10 +738,45 @@ export function PetExamRunner({ user }: { user: any }) {
     const total = score1A + score1B + score2A + score2B;
     const accuracy = Math.round((total / 70) * 100);
 
+    // 1. 同步讀取歷史並更新 LocalStorage（保證返回每週考期清單時 100% 讀到最新成績與最高/平均正確率）
+    let histMaxAcc = accuracy;
+    let histAvgAcc = accuracy;
+    let histCount = 1;
+    try {
+      const localAttemptsRaw = localStorage.getItem('pet_exam_local_attempts');
+      const localAttempts: any[] = localAttemptsRaw ? JSON.parse(localAttemptsRaw) : [];
+      const newAttempt = {
+        id: `local_${Date.now()}`,
+        examDate: paper.examDate,
+        score: total,
+        maxScore: 70,
+        accuracy,
+        timestamp: Date.now(),
+        userId: user?.uid || auth.currentUser?.uid || 'anonymous'
+      };
+      localAttempts.push(newAttempt);
+      localStorage.setItem('pet_exam_local_attempts', JSON.stringify(localAttempts));
+      window.dispatchEvent(new CustomEvent('pet_exam_attempt_saved', { detail: newAttempt }));
+
+      // 計算本考期的歷史最高與平均正確率
+      const dateList = localAttempts.filter((x: any) => String(x.examDate) === String(paper.examDate));
+      if (dateList.length > 0) {
+        histMaxAcc = Math.max(...dateList.map((x: any) => x.accuracy));
+        const sumAcc = dateList.reduce((s: number, x: any) => s + (x.accuracy || 0), 0);
+        histAvgAcc = Math.round(sumAcc / dateList.length);
+        histCount = dateList.length;
+      }
+    } catch (e) {
+      console.warn('Failed to save to localStorage:', e);
+    }
+
     const resultObj = {
       totalScore: total,
       maxScore: 70,
       accuracy,
+      histMaxAcc,
+      histAvgAcc,
+      attemptCount: histCount,
       breakdown: {
         score1A,
         score1B,
@@ -557,8 +789,9 @@ export function PetExamRunner({ user }: { user: any }) {
     setExamResult(resultObj);
     setExamSubmitted(true);
 
-    // 記錄作答至 Firestore attempts
-    if (user?.uid) {
+    // 2. 記錄作答至 Firestore attempts
+    const currentUid = user?.uid || auth.currentUser?.uid;
+    if (currentUid) {
       try {
         const wrongQuestionIds: string[] = [];
         const answersList: any[] = [];
@@ -569,7 +802,7 @@ export function PetExamRunner({ user }: { user: any }) {
           if (!item.isCorrect) wrongQuestionIds.push(qId);
           answersList.push({
             questionId: qId,
-            questionPrompt: `[Part I - Sec A 英譯] ${item.chinese}`,
+            questionPrompt: `[Part I - Sec A 英譯] ${cleanChinesePrompt(item.chinese, undefined, item.correctAns)}`,
             userAnswer: item.userAns,
             correctAnswer: item.correctAns,
             isCorrect: item.isCorrect,
@@ -644,8 +877,8 @@ export function PetExamRunner({ user }: { user: any }) {
         await addDoc(collection(db, 'attempts'), {
           subject: 'pet',
           examDate: paper.examDate,
-          userId: user.uid,
-          userDisplayName: user.displayName || 'PET 考生',
+          userId: currentUid,
+          userDisplayName: user?.displayName || auth.currentUser?.displayName || 'PET 考生',
           score: total,
           maxScore: 70,
           accuracy,
@@ -710,14 +943,32 @@ export function PetExamRunner({ user }: { user: any }) {
           </h2>
           <p className="text-[#8C7A6B] text-sm mt-1">作答完畢 · 滿分 70 Points 全真評量</p>
 
-          <div className="my-6 inline-flex items-baseline gap-2 bg-[#F5F5F0] px-8 py-4 rounded-2xl border border-[#EAE6DF]">
-            <span className="text-5xl sm:text-6xl font-black text-[#4A3F35] font-serif">
-              {examResult.totalScore}
-            </span>
-            <span className="text-xl text-[#8C7A6B] font-bold">/ 70 分</span>
-            <span className="ml-4 text-sm font-bold bg-[#C2A878] text-[#4A3F35] px-3 py-1 rounded-full">
-              準確率 {examResult.accuracy}%
-            </span>
+          <div className="my-6 inline-flex flex-col items-center gap-3 bg-[#F5F5F0] px-8 py-5 rounded-2xl border border-[#EAE6DF]">
+            <div className="inline-flex items-baseline gap-2">
+              <span className="text-5xl sm:text-6xl font-black text-[#4A3F35] font-serif">
+                {examResult.totalScore}
+              </span>
+              <span className="text-xl text-[#8C7A6B] font-bold">/ 70 分</span>
+              <span className="ml-4 text-sm font-bold bg-[#C2A878] text-[#4A3F35] px-3.5 py-1 rounded-full">
+                本次正確率 {examResult.accuracy}%
+              </span>
+            </div>
+
+            {/* 最高與平均正確率統計 */}
+            <div className="flex flex-wrap justify-center items-center gap-3 pt-2 border-t border-[#EAE6DF]/60 w-full text-xs">
+              <span className="bg-[#72816B]/15 text-[#72816B] font-bold px-3 py-1 rounded-full flex items-center">
+                <Award size={13} className="mr-1 text-[#72816B]" />
+                最高正確率：{examResult.histMaxAcc ?? examResult.accuracy}%
+              </span>
+              <span className="bg-[#4A3F35]/10 text-[#4A3F35] font-bold px-3 py-1 rounded-full">
+                平均正確率：{examResult.histAvgAcc ?? examResult.accuracy}%
+              </span>
+              {examResult.attemptCount && examResult.attemptCount > 1 && (
+                <span className="text-[#8C7A6B] bg-white px-2.5 py-0.5 rounded-full border border-[#EAE6DF]">
+                  累計測驗 {examResult.attemptCount} 次
+                </span>
+              )}
+            </div>
           </div>
 
           {/* 四大 Part 得分細目 */}
@@ -787,7 +1038,7 @@ export function PetExamRunner({ user }: { user: any }) {
                   }`}
                 >
                   <span className="font-medium text-[#4A3F35]">
-                    {item.id}. {item.chinese}
+                    {item.id}. {cleanChinesePrompt(item.chinese, undefined, item.correctAns)}
                   </span>
                   <div className="text-right">
                     <span className={item.isCorrect ? 'text-[#72816B] font-bold' : 'text-[#BC7665] font-bold'}>
@@ -1011,7 +1262,7 @@ export function PetExamRunner({ user }: { user: any }) {
                   className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border border-[#EAE6DF] bg-[#FDFBF7] focus-within:border-[#C2A878] focus-within:bg-white transition-all gap-2"
                 >
                   <span className="font-bold text-[#4A3F35] text-sm sm:w-36 shrink-0">
-                    {item.id}. {item.chinese}
+                    {item.id}. {cleanChinesePrompt(item.chinese, undefined, item.english)}
                   </span>
                   <input
                     type="text"
@@ -1364,6 +1615,26 @@ export function PetAdminPanel({ onRefresh }: { onRefresh: () => void }) {
           }
           affectedDates.add(targetDate);
 
+          const tense = item.verbTense || (
+            /present|現在|原形/i.test(prompt) ? 'present' :
+            /past simple|過去式/i.test(prompt) ? 'past' :
+            /participle|過去分詞|分詞|完成/i.test(prompt) ? 'participle' :
+            (item.itemNumber ? (((item.itemNumber - 1) % 3 === 0) ? 'present' : ((item.itemNumber - 1) % 3 === 1) ? 'past' : 'participle') : null)
+          );
+
+          let cleanAns = String(correctAnswer).trim();
+          let rawAcceptable = Array.isArray(item.acceptableAnswers)
+            ? item.acceptableAnswers
+            : (item.acceptableAnswers ? [String(item.acceptableAnswers)] : [cleanAns]);
+
+          // 過去分詞不可含 have/has 及空格
+          if (tense === 'participle') {
+            cleanAns = cleanAns.replace(/^(?:have|has)\s+/i, '').trim();
+            rawAcceptable = rawAcceptable
+              .map((a: any) => String(a).replace(/^(?:have|has)\s+/i, '').trim())
+              .filter((a: string) => a.length > 0);
+          }
+
           const qItem = {
             subject: 'pet',
             examDate: targetDate,
@@ -1373,16 +1644,16 @@ export function PetAdminPanel({ onRefresh }: { onRefresh: () => void }) {
             type: item.type || (item.options && item.options.length > 0 ? 'multiple_choice' : 'fill_in_the_blank'),
             prompt: String(prompt).replace(/\[SOURCE_IMAGE\]/g, ''),
             options: item.options || null,
-            correctAnswer: String(correctAnswer),
+            correctAnswer: cleanAns,
             clue: item.clue || null,
             explanation: item.explanation || null,
-            part: item.part || null,
-            verbTense: item.verbTense || null,
+            part: item.part || (prompt.includes('動詞三態') ? 'part2_a' : null),
+            verbTense: tense,
             itemNumber: item.itemNumber !== undefined ? item.itemNumber : null,
-            verbRowId: item.verbRowId !== undefined ? item.verbRowId : (item.itemNumber !== undefined ? item.itemNumber : null),
-            acceptableAnswers: Array.isArray(item.acceptableAnswers)
-              ? item.acceptableAnswers
-              : (item.acceptableAnswers ? [String(item.acceptableAnswers)] : [String(correctAnswer)]),
+            verbRowId: (item.verbRowId && item.verbRowId >= 1 && item.verbRowId <= 5)
+              ? item.verbRowId
+              : (item.itemNumber ? Math.ceil(item.itemNumber / 3) : null),
+            acceptableAnswers: rawAcceptable.length > 0 ? rawAcceptable : [cleanAns],
             createdAt: Date.now()
           };
           flatQuestions.push(cleanFirestoreData(qItem));
